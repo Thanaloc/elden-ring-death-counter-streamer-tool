@@ -10,7 +10,8 @@ from pathlib import Path
 import mss
 
 from .counter import DEFAULT_STATE_PATH, DeathLog
-from .detector import DeathDetector, DetectorConfig, capture_template, grab
+from .detector import (DeathDetector, DetectorConfig, capture_template,
+                       crop_band, grab, imwrite_png)
 from .server import serve
 
 TEMPLATE_PATH = DEFAULT_STATE_PATH.parent / "template.png"
@@ -101,6 +102,49 @@ def _bind_hotkeys(log: DeathLog, debug: bool, detector) -> None:
               "terminal en administrateur.")
 
 
+def cmd_diagnose(args) -> int:
+    """
+    Enregistre ce que le detecteur voit reellement pendant N secondes,
+    avec l'image qui a obtenu le meilleur score. Sert a comprendre un
+    non-declenchement sans avoir a deviner.
+    """
+    if not TEMPLATE_PATH.exists():
+        print(f"Aucun template : {TEMPLATE_PATH}. Lance d'abord le setup.")
+        return 1
+
+    detector = DeathDetector(TEMPLATE_PATH, DetectorConfig(threshold=args.threshold))
+    out_dir = TEMPLATE_PATH.parent / "diagnostic"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"Analyse pendant {args.seconds} secondes. Va mourir maintenant.\n")
+
+    best_score, best_band, scores, lumas = -1.0, None, [], []
+    period = 1.0 / FPS
+    deadline = time.time() + args.seconds
+
+    with mss.mss() as sct:
+        monitor = sct.monitors[args.monitor]
+        while time.time() < deadline:
+            started = time.time()
+            frame = grab(sct, monitor)
+            score = detector.score(frame)
+            scores.append(score)
+            lumas.append(float(frame.mean()))
+            if score > best_score:
+                best_score, best_band = score, crop_band(frame)
+            print(f"score={score:.3f}  luminance={lumas[-1]:6.1f}")
+            time.sleep(max(0.0, period - (time.time() - started)))
+
+    if best_band is not None:
+        imwrite_png(out_dir / "meilleur-score.png", best_band)
+
+    print(f"\nMeilleur score : {best_score:.3f}  (seuil actuel : {args.threshold})")
+    print(f"Score median   : {sorted(scores)[len(scores) // 2]:.3f}")
+    print(f"Luminance min  : {min(lumas):.1f}   max : {max(lumas):.1f}")
+    print(f"\nImages dans : {out_dir}")
+    return 0
+
+
 def cmd_boss(args) -> int:
     log = DeathLog()
     log.set_boss(args.name, keep_count=args.keep)
@@ -159,6 +203,12 @@ def main(argv=None) -> int:
     p.add_argument("--debug", action="store_true",
                    help="afficher le score de correlation en continu")
     p.set_defaults(func=cmd_run)
+
+    p = sub.add_parser("diagnose", parents=[screen],
+                       help="enregistrer ce que le detecteur voit")
+    p.add_argument("--seconds", type=int, default=25)
+    p.add_argument("--threshold", type=float, default=0.72)
+    p.set_defaults(func=cmd_diagnose)
 
     p = sub.add_parser("boss", help="changer le boss affiche")
     p.add_argument("name")

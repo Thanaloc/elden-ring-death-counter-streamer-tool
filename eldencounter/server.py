@@ -101,9 +101,21 @@ def make_handler(log):
     return Handler
 
 
-def serve(log, host: str = "127.0.0.1", port: int = 4747) -> ThreadingHTTPServer:
+class QuietServer(ThreadingHTTPServer):
+    """Un navigateur qui ferme un flux SSE n'est pas une erreur a afficher."""
+
+    def handle_error(self, request, client_address):
+        import sys
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (ConnectionAbortedError, ConnectionResetError,
+                            BrokenPipeError, TimeoutError)):
+            return
+        super().handle_error(request, client_address)
+
+
+def serve(log, host: str = "127.0.0.1", port: int = 4747) -> QuietServer:
     """Demarre le serveur dans un thread daemon et le retourne."""
-    httpd = ThreadingHTTPServer((host, port), make_handler(log))
+    httpd = QuietServer((host, port), make_handler(log))
     httpd.daemon_threads = True
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return httpd
