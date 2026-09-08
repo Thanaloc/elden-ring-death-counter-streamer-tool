@@ -33,6 +33,9 @@ HIGHPASS_SIGMA = 6.0     # rayon du flou soustrait pour isoler les traits fins
 STABLE_LEVEL = 4.0       # contraste local minimal pour qu'un pixel compte
 STABLE_RATIO = 0.55      # variation toleree d'une capture a l'autre
 GAMEPLAY_LIMIT = 0.5     # au-dela, le pixel est aussi present hors mort
+MAX_BLOCK_RATIO = 4.5    # au-dela, c'est un ruban (bord de voile), pas une lettre
+MIN_BLOCK_HEIGHT = 5     # une lettre a une epaisseur verticale
+MIN_BLOCKS = 8           # un texte fait plusieurs blocs, un ruban un seul
 MIN_CAPTURES = 4         # une capture ratee peut etre ecartee, il en reste 3
 MIN_KEPT = 3
 OUTLIER_MARGIN = 0.15    # ecart au score median qui fait ecarter une capture
@@ -150,43 +153,67 @@ def _candidate_mask(deaths: list, gameplay: list):
                         & (np.sign(games) == np.sign(mean))).mean(axis=0)
         keep &= (also_in_game < GAMEPLAY_LIMIT)
 
+    # Pas de fermeture ici : le tri par forme se fait sur les blocs separes.
     mask = cv2.morphologyEx(keep.astype(np.uint8), cv2.MORPH_OPEN,
                             np.ones((2, 2), np.uint8))
-    mask = cv2.morphologyEx(
-        mask, cv2.MORPH_CLOSE,
-        cv2.getStructuringElement(cv2.MORPH_RECT, (15, 5)))
     return mask, mean
+
+
+def _letter_blocks(mask: np.ndarray):
+    """
+    Garde les blocs qui ont une forme de lettre.
+
+    A ce stade les lettres sont encore separees : c'est le seul moment ou
+    l'on peut distinguer du texte d'un bord de voile, qui est un ruban long
+    et plat. Une fois la fermeture appliquee, les deux se ressemblent.
+    """
+    count, labels, stats, centroids = cv2.connectedComponentsWithStats(mask, 8)
+    height, width = mask.shape
+
+    blocks = []
+    for i in range(1, count):
+        w = stats[i, cv2.CC_STAT_WIDTH]
+        h = stats[i, cv2.CC_STAT_HEIGHT]
+        if stats[i, cv2.CC_STAT_AREA] < 15:
+            continue
+        if h < MIN_BLOCK_HEIGHT or w / max(h, 1) > MAX_BLOCK_RATIO:
+            continue
+        if w > width * 0.5 or h > height * 0.5:
+            continue
+        blocks.append(i)
+
+    return blocks, labels, stats, centroids
 
 
 def _extract_once(deaths: list, gameplay: list):
     mask, mean = _candidate_mask(deaths, gameplay)
-    count, labels, stats, centroids = cv2.connectedComponentsWithStats(mask, 8)
-    height, width = mask.shape
-
-    # L'interface du jeu touche les bords ou traverse toute la largeur.
-    blocks = [i for i in range(1, count)
-              if stats[i, cv2.CC_STAT_AREA] > 30
-              and stats[i, cv2.CC_STAT_WIDTH] < width * 0.8
-              and stats[i, cv2.CC_STAT_HEIGHT] < height * 0.4]
-    if not blocks:
+    blocks, labels, stats, centroids = _letter_blocks(mask)
+    if len(blocks) < MIN_BLOCKS:
         return None
 
-    main = max(blocks, key=lambda i: stats[i, cv2.CC_STAT_AREA])
-    main_y = centroids[main][1]
-    main_h = stats[main, cv2.CC_STAT_HEIGHT]
+    # Le texte tient sur une ligne : on garde les blocs qui la partagent.
+    heights = [stats[i, cv2.CC_STAT_HEIGHT] for i in blocks]
+    line_y = float(np.median([centroids[i][1] for i in blocks]))
+    line_h = float(np.median(heights))
     kept = [i for i in blocks
-            if abs(centroids[i][1] - main_y) < main_h * 1.2
-            and stats[i, cv2.CC_STAT_HEIGHT] < main_h * 2.2]
+            if abs(centroids[i][1] - line_y) < max(line_h * 1.5, 12)]
+    if len(kept) < MIN_BLOCKS:
+        return None
 
-    text = np.isin(labels, kept).astype(np.float32)
+    text = np.isin(labels, kept).astype(np.uint8)
+    # Les lettres ne sont recollees qu'apres le tri, pour la correlation.
+    text = cv2.morphologyEx(
+        text, cv2.MORPH_CLOSE,
+        cv2.getStructuringElement(cv2.MORPH_RECT, (15, 5))).astype(np.float32)
+
     ys, xs = np.nonzero(text)
     if xs.size < 150:
         return None
 
     pad = 6
     x0, y0 = max(0, int(xs.min()) - pad), max(0, int(ys.min()) - pad)
-    x1 = min(width, int(xs.max()) + pad + 1)
-    y1 = min(height, int(ys.max()) + pad + 1)
+    x1 = min(mask.shape[1], int(xs.max()) + pad + 1)
+    y1 = min(mask.shape[0], int(ys.max()) + pad + 1)
 
     return (np.ascontiguousarray(mean[y0:y1, x0:x1]),
             np.ascontiguousarray(text[y0:y1, x0:x1]), (x0, y0, x1, y1))
@@ -223,9 +250,10 @@ def extract_signature(deaths: list, gameplay: list | None = None):
         found = _extract_once(frames, gameplay or [])
         if found is None:
             raise SignatureError(
-                "Aucun texte commun aux captures.\n"
-                "Verifie que tu analyses le bon ecran (--monitor) et que le "
-                "texte etait bien affiche a chaque appui sur F8."
+                "Aucune forme de texte commune aux captures.\n"
+                "Verifie que tu analyses le bon ecran (--monitor), que le "
+                "texte etait affiche a chaque appui sur F8, et que tu es "
+                "bien mort a des endroits differents."
             )
         template, mask, box = found
         scores = [raw_score(f, template, mask) for f in frames]
@@ -263,7 +291,7 @@ def signature_preview(frame: np.ndarray, mask: np.ndarray, box) -> np.ndarray:
 
 @dataclass
 class DetectorConfig:
-    threshold: float = 0.45        # mesure : morts >= 0.71, jeu <= 0.23
+    threshold: float = 0.55        # mesure : morts >= 0.78, jeu <= 0.35
     confirm_frames: int = 2
     rearm_seconds: float = 8.0
     luma_gate: float = 150.0       # pre-filtre de performance, permissif

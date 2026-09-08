@@ -58,8 +58,8 @@ elden-counter reset --all      # tout effacer, historique compris
 détecteur.
 
 Les seuils par défaut ont été réglés sur de vraies captures d'Elden Ring, pas
-estimés : sur ces mesures, une mort obtient au minimum 0,71 et le jeu normal
-ne dépasse jamais 0,23, d'où le seuil à 0,45. Si l'écart est plus faible chez
+estimés : sur ces mesures, une mort obtient au minimum 0,78 et le jeu normal
+ne dépasse jamais 0,35, d'où le seuil à 0,55. Si l'écart est plus faible chez
 toi, refais le setup en mourant à des endroits vraiment différents.
 
 `--threshold` ajuste le seuil de déclenchement, `--confirm` le nombre d'images

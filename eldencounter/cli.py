@@ -286,7 +286,7 @@ def main(argv=None) -> int:
     p.add_argument("--keep", action="store_true",
                    help="garder le compteur de boss en cours")
     p.add_argument("--port", type=int, default=4747)
-    p.add_argument("--threshold", type=float, default=0.45)
+    p.add_argument("--threshold", type=float, default=0.55)
     p.add_argument("--confirm", type=int, default=3)
     p.add_argument("--manual", action="store_true",
                    help="ne compter qu'aux raccourcis clavier")
@@ -297,7 +297,7 @@ def main(argv=None) -> int:
     p = sub.add_parser("diagnose", parents=[screen],
                        help="enregistrer ce que le detecteur voit")
     p.add_argument("--seconds", type=int, default=25)
-    p.add_argument("--threshold", type=float, default=0.45)
+    p.add_argument("--threshold", type=float, default=0.55)
     p.set_defaults(func=cmd_diagnose)
 
     p = sub.add_parser("capture", parents=[screen],
