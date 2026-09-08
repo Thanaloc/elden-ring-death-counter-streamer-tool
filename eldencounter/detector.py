@@ -324,10 +324,44 @@ def extract_signature(deaths: list, gameplay: list | None = None,
     return template, mask, box, scores, dropped
 
 
-def save_signature(path: Path, template: np.ndarray, mask: np.ndarray) -> None:
+def load_signatures(path: Path) -> list:
+    """Retourne la liste des (template, mask) enregistres."""
+    if not path.is_file():
+        return []
+    with open(path, "rb") as handle:
+        data = np.load(handle)
+        keys = [k for k in data.files if k.startswith("template_")]
+        if not keys:   # format a signature unique des versions <= 0.5.2
+            return [(np.ascontiguousarray(data["template"], np.float32),
+                     np.ascontiguousarray(data["mask"], np.float32))]
+        pairs = []
+        for i in range(len(keys)):
+            pairs.append((np.ascontiguousarray(data[f"template_{i}"], np.float32),
+                          np.ascontiguousarray(data[f"mask_{i}"], np.float32)))
+        return pairs
+
+
+def save_signature(path: Path, template: np.ndarray, mask: np.ndarray,
+                   append: bool = False) -> int:
+    """
+    Enregistre une signature, en ajoutant aux precedentes si demande.
+
+    Le texte de mort ne se rend pas de la meme facon dans une caverne et
+    sous la neige en plein jour : le voile n'assombrit pas assez une scene
+    deja claire et le texte s'y delave. Une seule signature ne couvre pas
+    les deux, d'ou la possibilite d'en cumuler plusieurs.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
+    existing = load_signatures(path) if append else []
+    pairs = existing + [(template, mask)]
+
+    arrays = {}
+    for i, (tpl, msk) in enumerate(pairs):
+        arrays[f"template_{i}"] = tpl
+        arrays[f"mask_{i}"] = msk
     with open(path, "wb") as handle:
-        np.savez_compressed(handle, template=template, mask=mask)
+        np.savez_compressed(handle, **arrays)
+    return len(pairs)
 
 
 def signature_preview(frame: np.ndarray, mask: np.ndarray, box) -> np.ndarray:
@@ -350,20 +384,17 @@ class DetectorConfig:
     threshold: float = 0.55        # mesure : morts >= 0.78, jeu <= 0.35
     confirm_frames: int = 2
     rearm_seconds: float = 8.0
-    luma_gate: float = 150.0       # pre-filtre de performance, permissif
+    luma_gate: float = 200.0       # pre-filtre de performance, tres permissif
 
 
 class DeathDetector:
     def __init__(self, signature_path: Path, config: DetectorConfig | None = None):
-        if not signature_path.is_file():
+        self.signatures = load_signatures(signature_path)
+        if not self.signatures:
             raise FileNotFoundError(
                 f"Signature absente : {signature_path}\n"
                 "Lance d'abord la commande de setup."
             )
-        with open(signature_path, "rb") as handle:
-            data = np.load(handle)
-            self.template = np.ascontiguousarray(data["template"], np.float32)
-            self.mask = np.ascontiguousarray(data["mask"], np.float32)
 
         self.cfg = config or DetectorConfig()
         self._streak = 0
@@ -374,7 +405,8 @@ class DeathDetector:
     def score(self, gray_frame: np.ndarray) -> float:
         if gray_frame.mean() > self.cfg.luma_gate:
             return 0.0
-        return raw_score(crop_band(gray_frame), self.template, self.mask)
+        band = crop_band(gray_frame)
+        return max(raw_score(band, tpl, msk) for tpl, msk in self.signatures)
 
     def update(self, gray_frame: np.ndarray) -> bool:
         """A appeler a chaque frame. Retourne True une seule fois par mort."""

@@ -34,6 +34,24 @@ Ajoute ensuite dans OBS une **source navigateur** sur `http://127.0.0.1:4747`,
 en 600×300, largeur et hauteur personnalisées. Le fond est transparent, tu
 positionnes et redimensionnes la source comme tu veux.
 
+## Si des morts passent à travers dans certaines zones
+
+Le texte de mort ne se rend pas de la même façon partout. Dans une caverne
+il ressort nettement ; sous la neige en plein jour, le voile n'assombrit pas
+assez une scène déjà claire et le texte s'y délave au point qu'une signature
+apprise ailleurs ne le reconnaît plus.
+
+Dans ce cas, refais un setup dans la zone qui pose problème en ajoutant
+`--add` :
+
+```
+elden-counter setup --add
+```
+
+La nouvelle signature s'ajoute aux précédentes au lieu de les remplacer, et
+le détecteur retient le meilleur score de l'ensemble. Tu peux en cumuler
+autant que nécessaire.
+
 ## Raccourcis pendant le stream
 
 | Touche | Effet |

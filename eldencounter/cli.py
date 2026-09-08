@@ -14,7 +14,8 @@ from .counter import DEFAULT_STATE_PATH, DeathLog
 from .detector import (MIN_CAPTURES, DeathDetector, DetectorConfig,
                        SignatureError, crop_band, extract_signature, grab,
                        imwrite_png, raw_score, save_signature,
-                       signature_in_zone, signature_preview, wait_for_frames)
+                       load_signatures, signature_in_zone,
+                       signature_preview, wait_for_frames)
 from .setup_ui import confirm_zone
 from .server import serve
 
@@ -108,7 +109,7 @@ def cmd_setup(args) -> int:
         print("\nAucune signature n'a pu etre construite.")
         return 1
 
-    save_signature(SIGNATURE_PATH, template, mask)
+    total = save_signature(SIGNATURE_PATH, template, mask, append=args.add)
     imwrite_png(PREVIEW_PATH, signature_preview(deaths[-1], mask, box))
 
     final = [raw_score(f, template, mask) for f in deaths]
@@ -116,6 +117,9 @@ def cmd_setup(args) -> int:
     print(f"\nSignature enregistree : {SIGNATURE_PATH}")
     print(f"  {w}x{h} pixels, {int(mask.sum())} pixels retenus")
     print(f"  scores sur les captures : {min(final):.2f} a {max(final):.2f}")
+    if total > 1:
+        print(f"  {total} signatures enregistrees ; le detecteur garde "
+              "le meilleur score des deux")
     print(f"  apercu : {PREVIEW_PATH}")
     print("\nVerifie ensuite avec : elden-counter diagnose")
     return 0
@@ -206,6 +210,7 @@ def cmd_diagnose(args) -> int:
         return 1
 
     detector = DeathDetector(SIGNATURE_PATH, DetectorConfig(threshold=args.threshold))
+    print(f"{len(detector.signatures)} signature(s) chargee(s).")
     out_dir = SIGNATURE_PATH.parent / "diagnostic"
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -341,6 +346,9 @@ def main(argv=None) -> int:
                    help="port de la page de verification")
     p.add_argument("--no-confirm", action="store_true",
                    help="accepter la zone detectee sans verification")
+    p.add_argument("--add", action="store_true",
+                   help="ajouter une signature au lieu de remplacer "
+                        "(pour couvrir une zone de luminosite differente)")
     p.set_defaults(func=cmd_setup)
 
     p = sub.add_parser("run", parents=[screen],
