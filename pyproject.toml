@@ -22,6 +22,3 @@ elden-counter = "eldencounter.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["eldencounter"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"eldencounter/overlay" = "eldencounter/overlay"
