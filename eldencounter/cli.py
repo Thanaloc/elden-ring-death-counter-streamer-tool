@@ -10,12 +10,13 @@ from pathlib import Path
 import mss
 
 from .counter import DEFAULT_STATE_PATH, DeathLog
-from .detector import (DeathDetector, DetectorConfig, crop_band, grab,
-                       imwrite_png, wait_for_frame)
-from .setup_ui import crop_in_browser, save_template
+from .detector import (MIN_CAPTURES, DeathDetector, DetectorConfig,
+                       SignatureError, crop_band, extract_signature, grab,
+                       imwrite_png, save_signature, signature_preview,
+                       wait_for_frames)
 from .server import serve
 
-TEMPLATE_PATH = DEFAULT_STATE_PATH.parent / "template.png"
+SIGNATURE_PATH = DEFAULT_STATE_PATH.parent / "signature.npz"
 FPS = 4
 
 
@@ -29,42 +30,34 @@ def cmd_setup(args) -> int:
             print(f"Ecran {i} : {m['width']}x{m['height']}{marker}")
         print()
 
+    print(f"Il faut {MIN_CAPTURES} morts, si possible a des endroits differents.")
+    print("C'est ce qui permet de distinguer le texte du decor.\n")
+
     try:
-        band = wait_for_frame(args.monitor)
+        frames = wait_for_frames(args.monitor, MIN_CAPTURES)
+        template, mask, box = extract_signature(frames)
     except KeyboardInterrupt:
         print("\nSetup annule.")
         return 1
-
-    print("Capture faite.\n")
-
-    result = {}
-
-    def on_crop(x0, y0, x1, y1):
-        template = save_template(band, (x0, y0, x1, y1),
-                                 TEMPLATE_PATH, PREVIEW_PATH)
-        result["shape"] = template.shape
-
-    try:
-        crop_in_browser(band, on_crop, port=args.port)
-    except KeyboardInterrupt:
-        print("\nSetup annule.")
+    except SignatureError as exc:
+        print(f"\n{exc}")
         return 1
 
-    if "shape" not in result:
-        print("Aucun cadrage enregistre.")
-        return 1
+    save_signature(SIGNATURE_PATH, template, mask)
+    imwrite_png(PREVIEW_PATH, signature_preview(frames[-1], mask, box))
 
-    h, w = result["shape"]
-    print(f"Template enregistre : {TEMPLATE_PATH}")
-    print(f"  {w}x{h} pixels, {TEMPLATE_PATH.stat().st_size} octets")
-    print(f"  apercu : {PREVIEW_PATH}")
-    print("\nVerifie maintenant avec : elden-counter diagnose")
+    h, w = template.shape
+    print(f"Signature enregistree : {SIGNATURE_PATH}")
+    print(f"  {w}x{h} pixels, {int(mask.sum())} pixels de texte retenus")
+    print(f"\nOuvre {PREVIEW_PATH} pour verifier.")
+    print("Les pixels surlignes doivent dessiner le texte, et rien d'autre.")
+    print("\nVerifie ensuite avec : elden-counter diagnose")
     return 0
 
 
 def cmd_run(args) -> int:
-    if not TEMPLATE_PATH.exists():
-        print(f"Aucun template a l'emplacement attendu : {TEMPLATE_PATH}")
+    if not SIGNATURE_PATH.exists():
+        print(f"Aucune signature a l'emplacement attendu : {SIGNATURE_PATH}")
         print("Lance d'abord : elden-counter setup")
         return 1
 
@@ -73,7 +66,7 @@ def cmd_run(args) -> int:
         log.set_boss(args.boss, keep_count=args.keep)
 
     detector = DeathDetector(
-        TEMPLATE_PATH,
+        SIGNATURE_PATH,
         DetectorConfig(threshold=args.threshold, confirm_frames=args.confirm),
     )
 
@@ -136,12 +129,12 @@ def cmd_diagnose(args) -> int:
     avec l'image qui a obtenu le meilleur score. Sert a comprendre un
     non-declenchement sans avoir a deviner.
     """
-    if not TEMPLATE_PATH.exists():
-        print(f"Aucun template : {TEMPLATE_PATH}. Lance d'abord le setup.")
+    if not SIGNATURE_PATH.exists():
+        print(f"Aucune signature : {SIGNATURE_PATH}. Lance d'abord le setup.")
         return 1
 
-    detector = DeathDetector(TEMPLATE_PATH, DetectorConfig(threshold=args.threshold))
-    out_dir = TEMPLATE_PATH.parent / "diagnostic"
+    detector = DeathDetector(SIGNATURE_PATH, DetectorConfig(threshold=args.threshold))
+    out_dir = SIGNATURE_PATH.parent / "diagnostic"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Analyse pendant {args.seconds} secondes. Va mourir maintenant.\n")
@@ -217,9 +210,7 @@ def main(argv=None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("setup", parents=[screen],
-                       help="capturer et cadrer l'image de reference")
-    p.add_argument("--port", type=int, default=4748,
-                   help="port de la page de cadrage")
+                       help="apprendre a reconnaitre l'ecran de mort")
     p.set_defaults(func=cmd_setup)
 
     p = sub.add_parser("run", parents=[screen],
@@ -228,7 +219,7 @@ def main(argv=None) -> int:
     p.add_argument("--keep", action="store_true",
                    help="garder le compteur de boss en cours")
     p.add_argument("--port", type=int, default=4747)
-    p.add_argument("--threshold", type=float, default=0.72)
+    p.add_argument("--threshold", type=float, default=0.60)
     p.add_argument("--confirm", type=int, default=3)
     p.add_argument("--debug", action="store_true",
                    help="afficher le score de correlation en continu")
@@ -237,7 +228,7 @@ def main(argv=None) -> int:
     p = sub.add_parser("diagnose", parents=[screen],
                        help="enregistrer ce que le detecteur voit")
     p.add_argument("--seconds", type=int, default=25)
-    p.add_argument("--threshold", type=float, default=0.72)
+    p.add_argument("--threshold", type=float, default=0.60)
     p.set_defaults(func=cmd_diagnose)
 
     p = sub.add_parser("boss", help="changer le boss affiche")

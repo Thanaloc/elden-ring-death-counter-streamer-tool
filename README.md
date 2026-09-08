@@ -54,14 +54,16 @@ elden-counter reset --all      # tout effacer, historique compris
 
 ## Réglages
 
-`elden-counter run --debug` affiche le score de corrélation en continu. Pendant
-l'écran de mort tu devrais dépasser 0,90 ; le reste du temps rester sous 0,40.
-Si ce n'est pas le cas, refais le setup en appuyant sur F8 quand le texte est
-pleinement affiché plutôt que pendant le fondu.
+`elden-counter diagnose` enregistre pendant trente secondes ce que voit le
+détecteur. Pendant l'écran de mort le score doit dépasser 0,90, et rester
+sous 0,25 le reste du temps. Si l'écart est plus faible, refais le setup en
+mourant à des endroits vraiment différents.
 
 `--threshold` ajuste le seuil de déclenchement, `--confirm` le nombre d'images
 consécutives requises. Monte `--confirm` si tu as des faux positifs, descends-le
-si des morts passent à travers.
+si des morts passent à travers. Vérifie l'aperçu généré par le setup
+avant de toucher aux seuils : les pixels surlignés doivent dessiner le
+texte et rien d'autre.
 
 Sur un écran secondaire, précise `--monitor 2`.
 
