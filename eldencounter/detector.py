@@ -25,6 +25,35 @@ SEARCH_BAND = (0.15, 0.30, 0.85, 0.66)
 WORK_WIDTH = 960
 
 
+def imread_gray(path: Path):
+    """
+    Lecture tolerante aux chemins non-ASCII.
+
+    cv2.imread passe par l'API ANSI de Windows et echoue silencieusement
+    des qu'un accent apparait dans le chemin, ce qui arrive des que le nom
+    d'utilisateur en contient un.
+    """
+    try:
+        data = np.fromfile(str(path), dtype=np.uint8)
+    except OSError:
+        return None
+    if data.size == 0:
+        return None
+    return cv2.imdecode(data, cv2.IMREAD_GRAYSCALE)
+
+
+def imwrite_png(path: Path, image: np.ndarray) -> bool:
+    """Ecriture tolerante aux chemins non-ASCII. Retourne le succes reel."""
+    ok, buffer = cv2.imencode(".png", image)
+    if not ok:
+        return False
+    try:
+        buffer.tofile(str(path))
+    except OSError:
+        return False
+    return path.is_file() and path.stat().st_size > 0
+
+
 def grab(sct, monitor) -> np.ndarray:
     """Capture le moniteur et le ramene a WORK_WIDTH en niveaux de gris."""
     frame = np.asarray(sct.grab(monitor))[:, :, :3]
@@ -59,8 +88,18 @@ def capture_template(monitor_index: int, out_path: Path) -> Path:
             if keyboard.is_pressed("f8"):
                 band = crop_band(grab(sct, monitor))
                 out_path.parent.mkdir(parents=True, exist_ok=True)
-                cv2.imwrite(str(out_path), band)
-                print(f"Template enregistre : {out_path} ({band.shape[1]}x{band.shape[0]})")
+
+                if not imwrite_png(out_path, band):
+                    raise OSError(f"Impossible d'ecrire le template dans {out_path}")
+
+                # On relit ce qu'on vient d'ecrire : un fichier illisible
+                # ici vaut mieux qu'une erreur au milieu d'un stream.
+                if imread_gray(out_path) is None:
+                    raise OSError(f"Template ecrit mais illisible : {out_path}")
+
+                print(f"Template enregistre : {out_path} "
+                      f"({band.shape[1]}x{band.shape[0]} pixels, "
+                      f"{out_path.stat().st_size} octets)")
                 return out_path
             time.sleep(0.05)
 
@@ -75,11 +114,11 @@ class DetectorConfig:
 
 class DeathDetector:
     def __init__(self, template_path: Path, config: DetectorConfig | None = None):
-        template = cv2.imread(str(template_path), cv2.IMREAD_GRAYSCALE)
+        template = imread_gray(template_path)
         if template is None:
             raise FileNotFoundError(
-                f"Template introuvable : {template_path}. "
-                "Lance d'abord la commande de setup."
+                f"Template illisible ou absent : {template_path}\n"
+                "Relance la commande de setup."
             )
         self.template = template
         self.cfg = config or DetectorConfig()

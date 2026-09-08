@@ -18,6 +18,12 @@ FPS = 4
 
 
 def cmd_setup(args) -> int:
+    with mss.mss() as sct:
+        for i, m in enumerate(sct.monitors[1:], start=1):
+            marker = "  <-- selectionne" if i == args.monitor else ""
+            print(f"Ecran {i} : {m['width']}x{m['height']}{marker}")
+        print()
+
     try:
         capture_template(args.monitor, TEMPLATE_PATH)
     except KeyboardInterrupt:
@@ -29,7 +35,8 @@ def cmd_setup(args) -> int:
 
 def cmd_run(args) -> int:
     if not TEMPLATE_PATH.exists():
-        print("Aucun template enregistre. Lance d'abord : elden-counter setup")
+        print(f"Aucun template a l'emplacement attendu : {TEMPLATE_PATH}")
+        print("Lance d'abord : elden-counter setup")
         return 1
 
     log = DeathLog()
@@ -129,14 +136,20 @@ def main(argv=None) -> int:
         prog="elden-counter",
         description="Compteur de morts Elden Ring pour OBS et Streamlabs.",
     )
-    parser.add_argument("--monitor", type=int, default=1,
+    screen = argparse.ArgumentParser(add_help=False)
+    screen.add_argument("--monitor", type=int, default=1,
                         help="ecran a analyser (1 = principal)")
+
+    parser.add_argument("--monitor", type=int, default=None,
+                        help=argparse.SUPPRESS)  # accepte avant la sous-commande
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("setup", help="capturer l'image de reference de l'ecran de mort")
+    p = sub.add_parser("setup", parents=[screen],
+                       help="capturer l'image de reference de l'ecran de mort")
     p.set_defaults(func=cmd_setup)
 
-    p = sub.add_parser("run", help="lancer la detection et l'overlay")
+    p = sub.add_parser("run", parents=[screen],
+                       help="lancer la detection et l'overlay")
     p.add_argument("--boss", default=None, help="nom du boss affiche")
     p.add_argument("--keep", action="store_true",
                    help="garder le compteur de boss en cours")
@@ -160,7 +173,14 @@ def main(argv=None) -> int:
                    help="effacer aussi le total et l'historique")
     p.set_defaults(func=cmd_reset)
 
+    global_monitor = None
+    if "--monitor" in (argv if argv is not None else sys.argv[1:]):
+        pre, _ = parser.parse_known_args(argv)
+        global_monitor = pre.monitor
+
     args = parser.parse_args(argv)
+    if global_monitor is not None and getattr(args, "monitor", 1) == 1:
+        args.monitor = global_monitor
     return args.func(args)
 
 
