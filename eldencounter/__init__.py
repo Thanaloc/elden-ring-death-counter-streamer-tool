@@ -1,3 +1,3 @@
 """Compteur de morts Elden Ring pour OBS et Streamlabs."""
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"

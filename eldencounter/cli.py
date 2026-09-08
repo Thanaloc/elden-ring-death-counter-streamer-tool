@@ -56,19 +56,21 @@ def cmd_setup(args) -> int:
 
 
 def cmd_run(args) -> int:
-    if not SIGNATURE_PATH.exists():
-        print(f"Aucune signature a l'emplacement attendu : {SIGNATURE_PATH}")
-        print("Lance d'abord : elden-counter setup")
-        return 1
+    manual = args.manual or not SIGNATURE_PATH.exists()
+    if manual and not args.manual:
+        print("Aucune signature enregistree : demarrage en mode manuel.")
+        print("Le comptage se fait aux raccourcis clavier.\n")
 
     log = DeathLog()
     if args.boss:
         log.set_boss(args.boss, keep_count=args.keep)
 
-    detector = DeathDetector(
-        SIGNATURE_PATH,
-        DetectorConfig(threshold=args.threshold, confirm_frames=args.confirm),
-    )
+    detector = None
+    if not manual:
+        detector = DeathDetector(
+            SIGNATURE_PATH,
+            DetectorConfig(threshold=args.threshold, confirm_frames=args.confirm),
+        )
 
     serve(log, port=args.port)
     print(f"Overlay disponible sur http://127.0.0.1:{args.port}")
@@ -82,21 +84,25 @@ def cmd_run(args) -> int:
     print("Ctrl+C pour arreter.\n")
 
     period = 1.0 / FPS
-    with mss.mss() as sct:
-        monitor = sct.monitors[args.monitor]
-        try:
+    try:
+        if detector is None:
             while True:
-                started = time.time()
-                if detector.update(grab(sct, monitor)):
-                    s = log.record_death()
-                    print(f"Mort comptee — {s['boss_count']} sur ce boss, "
-                          f"{s['total']} au total")
-                elif args.debug:
-                    print(f"score={detector.last_score:.3f}", end="\r")
-                time.sleep(max(0.0, period - (time.time() - started)))
-        except KeyboardInterrupt:
-            s = log.snapshot()
-            print(f"\nArret. {s['boss_count']} morts sur ce boss, {s['total']} au total.")
+                time.sleep(0.5)
+        else:
+            with mss.mss() as sct:
+                monitor = sct.monitors[args.monitor]
+                while True:
+                    started = time.time()
+                    if detector.update(grab(sct, monitor)):
+                        s = log.record_death()
+                        print(f"Mort comptee — {s['boss_count']} sur ce boss, "
+                              f"{s['total']} au total")
+                    elif args.debug:
+                        print(f"score={detector.last_score:.3f}", end="\r")
+                    time.sleep(max(0.0, period - (time.time() - started)))
+    except KeyboardInterrupt:
+        s = log.snapshot()
+        print(f"\nArret. {s['boss_count']} morts sur ce boss, {s['total']} au total.")
     return 0
 
 
@@ -166,6 +172,60 @@ def cmd_diagnose(args) -> int:
     return 0
 
 
+def cmd_capture(args) -> int:
+    """
+    Enregistre des frames brutes : plusieurs ecrans de mort, et des moments
+    de jeu normal preleves pendant l'attente. Sert a mettre au point la
+    detection sur de vraies images plutot que sur des suppositions.
+    """
+    import keyboard
+
+    out_dir = SIGNATURE_PATH.parent / "echantillons"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for old in out_dir.glob("*.png"):
+        old.unlink()
+
+    print(f"Enregistrement dans {out_dir}\n")
+    print(f"Il faut {args.deaths} morts, a des endroits differents.")
+    print("Appuie sur F8 a chaque fois que le texte de mort est affiche.")
+    print("Le jeu normal est echantillonne tout seul entre les morts.\n")
+
+    deaths, ambient = 0, 0
+    last_sample = 0.0
+
+    with mss.mss() as sct:
+        monitor = sct.monitors[args.monitor]
+        while deaths < args.deaths:
+            now = time.time()
+
+            if keyboard.is_pressed("esc"):
+                print("\nInterrompu.")
+                break
+
+            if keyboard.is_pressed("f8"):
+                deaths += 1
+                imwrite_png(out_dir / f"mort-{deaths}.png",
+                            crop_band(grab(sct, monitor)))
+                print(f"  mort {deaths}/{args.deaths} enregistree")
+                while keyboard.is_pressed("f8"):
+                    time.sleep(0.05)
+                last_sample = time.time() + 6.0   # laisse l'ecran de mort passer
+                continue
+
+            if now - last_sample > args.interval and ambient < args.gameplay:
+                ambient += 1
+                imwrite_png(out_dir / f"jeu-{ambient:02d}.png",
+                            crop_band(grab(sct, monitor)))
+                last_sample = now
+
+            time.sleep(0.1)
+
+    print(f"\n{deaths} morts et {ambient} frames de jeu dans :")
+    print(f"  {out_dir}")
+    print("\nCompresse ce dossier et envoie-le.")
+    return 0
+
+
 def cmd_boss(args) -> int:
     log = DeathLog()
     log.set_boss(args.name, keep_count=args.keep)
@@ -221,6 +281,8 @@ def main(argv=None) -> int:
     p.add_argument("--port", type=int, default=4747)
     p.add_argument("--threshold", type=float, default=0.60)
     p.add_argument("--confirm", type=int, default=3)
+    p.add_argument("--manual", action="store_true",
+                   help="ne compter qu'aux raccourcis clavier")
     p.add_argument("--debug", action="store_true",
                    help="afficher le score de correlation en continu")
     p.set_defaults(func=cmd_run)
@@ -230,6 +292,13 @@ def main(argv=None) -> int:
     p.add_argument("--seconds", type=int, default=25)
     p.add_argument("--threshold", type=float, default=0.60)
     p.set_defaults(func=cmd_diagnose)
+
+    p = sub.add_parser("capture", parents=[screen],
+                       help="enregistrer des frames brutes pour analyse")
+    p.add_argument("--deaths", type=int, default=4)
+    p.add_argument("--gameplay", type=int, default=12)
+    p.add_argument("--interval", type=float, default=3.0)
+    p.set_defaults(func=cmd_capture)
 
     p = sub.add_parser("boss", help="changer le boss affiche")
     p.add_argument("name")
