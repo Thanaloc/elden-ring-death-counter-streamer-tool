@@ -13,6 +13,7 @@ la langue du jeu, de la resolution et de l'endroit ou l'on meurt.
 
 from __future__ import annotations
 
+import itertools
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,7 +39,7 @@ MIN_BLOCK_HEIGHT = 5     # une lettre a une epaisseur verticale
 MIN_BLOCKS = 8           # un texte fait plusieurs blocs, un ruban un seul
 MIN_CAPTURES = 4         # une capture ratee peut etre ecartee, il en reste 3
 MIN_KEPT = 3
-OUTLIER_MARGIN = 0.15    # ecart au score median qui fait ecarter une capture
+MIN_MARGIN = 0.15        # ecart minimal exige entre morts et jeu normal
 
 
 # --------------------------------------------------------------- fichiers
@@ -185,8 +186,14 @@ def _letter_blocks(mask: np.ndarray):
     return blocks, labels, stats, centroids
 
 
-def _extract_once(deaths: list, gameplay: list):
+def _extract_once(deaths: list, gameplay: list, zone=None):
     mask, mean = _candidate_mask(deaths, gameplay)
+
+    if zone is not None:
+        x0, y0, x1, y1 = zone
+        limited = np.zeros_like(mask)
+        limited[y0:y1, x0:x1] = mask[y0:y1, x0:x1]
+        mask = limited
     blocks, labels, stats, centroids = _letter_blocks(mask)
     if len(blocks) < MIN_BLOCKS:
         return None
@@ -221,38 +228,14 @@ def _extract_once(deaths: list, gameplay: list):
 
 def signature_in_zone(deaths: list, gameplay: list, zone):
     """
-    Reconstruit la signature en ne gardant que la zone confirmee.
+    Reconstruit la signature en bornant la recherche a la zone confirmee.
 
     Tout le travail automatique est conserve : constance entre les morts,
-    exclusion de l'interface, tri par forme. La zone ne fait que borner
-    l'endroit ou l'on cherche.
+    exclusion de l'interface, tri par forme, et selection des captures par
+    la marge. La zone ne fait que borner l'endroit ou l'on cherche.
     """
-    x0, y0, x1, y1 = zone
-    mask, mean = _candidate_mask(deaths, gameplay)
-
-    limited = np.zeros_like(mask)
-    limited[y0:y1, x0:x1] = mask[y0:y1, x0:x1]
-
-    blocks, labels, stats, _ = _letter_blocks(limited)
-    if not blocks:
-        raise SignatureError("Aucun trait exploitable dans la zone choisie.")
-
-    text = np.isin(labels, blocks).astype(np.uint8)
-    text = cv2.morphologyEx(
-        text, cv2.MORPH_CLOSE,
-        cv2.getStructuringElement(cv2.MORPH_RECT, (15, 5))).astype(np.float32)
-
-    ys, xs = np.nonzero(text)
-    if xs.size < 150:
-        raise SignatureError("Trop peu de pixels retenus dans la zone choisie.")
-
-    pad = 6
-    bx0, by0 = max(0, int(xs.min()) - pad), max(0, int(ys.min()) - pad)
-    bx1 = min(mask.shape[1], int(xs.max()) + pad + 1)
-    by1 = min(mask.shape[0], int(ys.max()) + pad + 1)
-
-    return (np.ascontiguousarray(mean[by0:by1, bx0:bx1]),
-            np.ascontiguousarray(text[by0:by1, bx0:bx1]), (bx0, by0, bx1, by1))
+    template, mask, box, _, _ = extract_signature(deaths, gameplay, zone=zone)
+    return template, mask, box
 
 
 def raw_score(frame: np.ndarray, template: np.ndarray, mask: np.ndarray) -> float:
@@ -264,13 +247,33 @@ def raw_score(frame: np.ndarray, template: np.ndarray, mask: np.ndarray) -> floa
     return float(result.max()) if result.size else 0.0
 
 
-def extract_signature(deaths: list, gameplay: list | None = None):
+def _evaluate(template, mask, kept: list, gameplay: list):
+    """
+    Note une signature par la marge qu'elle laisse entre morts et jeu normal.
+
+    C'est la seule mesure qui compte vraiment : une signature accrochee au
+    bord du voile obtient d'excellents scores sur les morts, mais se
+    declenche aussi sur des moments de jeu. La marge le revele tout de suite.
+    """
+    on_deaths = [raw_score(f, template, mask) for f in kept]
+    on_gameplay = [raw_score(f, template, mask) for f in gameplay] or [0.0]
+    return min(on_deaths) - max(on_gameplay), on_deaths, on_gameplay
+
+
+def extract_signature(deaths: list, gameplay: list | None = None,
+                      zone=None):
     """
     Isole le texte a partir de plusieurs morts.
 
-    Une capture prise pendant le fondu ou masquee par un effet degrade la
-    signature entiere : on ecarte celles qui collent mal a ce que les autres
-    decrivent, tant qu'il en reste assez.
+    Si `zone` est fournie, la recherche est bornee a ce rectangle : c'est
+    le cas du cadrage manuel. Le tri des captures reste indispensable la
+    aussi, une mauvaise capture deviant la signature meme dans la bonne zone.
+
+    Une capture prise pendant un fondu, ou dans une scene ou le voile
+    domine, oriente l'extraction vers un bord d'assombrissement plutot que
+    vers le texte. Plutot que de deviner laquelle poser de cote, on essaie
+    les differentes combinaisons et on garde celle qui separe le mieux les
+    morts du jeu normal.
 
     Retourne (template, mask, box, scores, ecartees).
     """
@@ -279,29 +282,46 @@ def extract_signature(deaths: list, gameplay: list | None = None):
     if len({f.shape for f in deaths}) != 1:
         raise SignatureError("Les captures n'ont pas toutes la meme taille.")
 
-    frames = list(deaths)
-    dropped = 0
+    gameplay = gameplay or []
+    best = None
 
-    while True:
-        found = _extract_once(frames, gameplay or [])
-        if found is None:
-            raise SignatureError(
-                "Aucune forme de texte commune aux captures.\n"
-                "Verifie que tu analyses le bon ecran (--monitor), que le "
-                "texte etait affiche a chaque appui sur F8, et que tu es "
-                "bien mort a des endroits differents."
-            )
-        template, mask, box = found
-        scores = [raw_score(f, template, mask) for f in frames]
-        median = float(np.median(scores))
-        worst = int(np.argmin(scores))
+    # D'abord toutes les captures, puis les combinaisons ou l'on en retire
+    # une, deux... tant qu'il en reste assez.
+    for size in range(len(deaths), MIN_KEPT - 1, -1):
+        for combo in itertools.combinations(range(len(deaths)), size):
+            subset = [deaths[i] for i in combo]
+            found = _extract_once(subset, gameplay, zone)
+            if found is None:
+                continue
+            template, mask, box = found
+            margin, on_deaths, _ = _evaluate(template, mask, subset, gameplay)
+            if best is None or margin > best[0]:
+                best = (margin, template, mask, box, on_deaths,
+                        len(deaths) - size)
+        # Une combinaison complete qui separe bien vaut mieux qu'une
+        # combinaison plus courte : inutile de continuer a en retirer.
+        if best is not None and best[0] >= MIN_MARGIN:
+            break
 
-        if len(frames) > MIN_KEPT and scores[worst] < median - OUTLIER_MARGIN:
-            frames.pop(worst)
-            dropped += 1
-            continue
+    if best is None:
+        raise SignatureError(
+            "Aucune forme de texte commune aux captures.\n"
+            "Verifie que tu analyses le bon ecran (--monitor), que le "
+            "texte etait affiche a chaque appui sur F8, et que tu es "
+            "bien mort a des endroits differents."
+        )
 
-        return template, mask, box, scores, dropped
+    margin, template, mask, box, scores, dropped = best
+    if margin < MIN_MARGIN:
+        raise SignatureError(
+            f"La meilleure signature ne laisse qu'une marge de {margin:.2f} "
+            f"entre les morts et le jeu normal (il en faut {MIN_MARGIN}).\n"
+            "Elle s'accroche sans doute a un assombrissement de l'ecran "
+            "plutot qu'au texte. Refais le setup en mourant dans des "
+            "decors plus varies."
+        )
+
+    return template, mask, box, scores, dropped
 
 
 def save_signature(path: Path, template: np.ndarray, mask: np.ndarray) -> None:

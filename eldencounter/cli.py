@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 import mss
+import numpy as np
 
 from .counter import DEFAULT_STATE_PATH, DeathLog
 from .detector import (MIN_CAPTURES, DeathDetector, DetectorConfig,
@@ -63,29 +64,49 @@ def cmd_setup(args) -> int:
     _store_samples(deaths, ambient)
     print(f"\nCaptures conservees dans {SAMPLES_DIR}")
 
+    band_h, band_w = deaths[-1].shape[:2]
+    fallback_box = (int(band_w * 0.10), int(band_h * 0.35),
+                    int(band_w * 0.90), int(band_h * 0.75))
+
+    template = mask = box = None
     try:
         template, mask, box, scores, dropped = extract_signature(deaths, ambient)
+        if dropped:
+            print(f"{dropped} capture(s) ecartee(s) : elles orientaient la "
+                  "detection ailleurs que sur le texte.")
+        print(f"Coherence des captures retenues : "
+              f"{min(scores):.2f} a {max(scores):.2f}")
     except SignatureError as exc:
+        if args.no_confirm:
+            print(f"\n{exc}")
+            return 1
+        # Echouer ici serait le pire moment : c'est justement quand la
+        # detection ne s'en sort pas qu'il faut pouvoir cadrer a la main.
         print(f"\n{exc}")
-        return 1
+        print("\nLa detection automatique n'a pas abouti. Tu vas pouvoir "
+              "tracer la zone du texte toi-meme.")
 
-    if dropped:
-        print(f"{dropped} capture(s) ecartee(s) : trop differente(s) des autres.")
-    print(f"Coherence des captures retenues : {min(scores):.2f} a {max(scores):.2f}")
-
-    if not args.no_confirm:
+    if args.no_confirm and template is not None:
+        pass
+    else:
+        proposed = box if box is not None else fallback_box
+        shown = mask if mask is not None else np.zeros((1, 1), np.float32)
         try:
-            zone = confirm_zone(deaths[-1], mask, box, port=args.port)
+            zone = confirm_zone(deaths[-1], shown, proposed, port=args.port)
         except KeyboardInterrupt:
             print("\nSetup annule.")
             return 1
-        if tuple(zone) != tuple(box):
-            print("Zone corrigee, reconstruction de la signature.")
+        if template is None or tuple(zone) != tuple(proposed):
+            print("Reconstruction de la signature sur la zone choisie.")
             try:
                 template, mask, box = signature_in_zone(deaths, ambient, zone)
             except SignatureError as exc:
                 print(f"\n{exc}")
                 return 1
+
+    if template is None:
+        print("\nAucune signature n'a pu etre construite.")
+        return 1
 
     save_signature(SIGNATURE_PATH, template, mask)
     imwrite_png(PREVIEW_PATH, signature_preview(deaths[-1], mask, box))
