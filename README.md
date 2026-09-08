@@ -55,9 +55,12 @@ elden-counter reset --all      # tout effacer, historique compris
 ## Réglages
 
 `elden-counter diagnose` enregistre pendant trente secondes ce que voit le
-détecteur. Pendant l'écran de mort le score doit dépasser 0,90, et rester
-sous 0,25 le reste du temps. Si l'écart est plus faible, refais le setup en
-mourant à des endroits vraiment différents.
+détecteur.
+
+Les seuils par défaut ont été réglés sur de vraies captures d'Elden Ring, pas
+estimés : sur ces mesures, une mort obtient au minimum 0,71 et le jeu normal
+ne dépasse jamais 0,23, d'où le seuil à 0,45. Si l'écart est plus faible chez
+toi, refais le setup en mourant à des endroits vraiment différents.
 
 `--threshold` ajuste le seuil de déclenchement, `--confirm` le nombre d'images
 consécutives requises. Monte `--confirm` si tu as des faux positifs, descends-le

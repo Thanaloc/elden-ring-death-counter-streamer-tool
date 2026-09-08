@@ -30,12 +30,13 @@ def cmd_setup(args) -> int:
             print(f"Ecran {i} : {m['width']}x{m['height']}{marker}")
         print()
 
-    print(f"Il faut {MIN_CAPTURES} morts, si possible a des endroits differents.")
-    print("C'est ce qui permet de distinguer le texte du decor.\n")
+    print(f"Il faut {MIN_CAPTURES} morts, a des endroits differents.")
+    print("Entre les morts, joue et deplace-toi : les decors de jeu sont")
+    print("preleves tout seuls et servent a eliminer l'interface.\n")
 
     try:
-        frames = wait_for_frames(args.monitor, MIN_CAPTURES)
-        template, mask, box = extract_signature(frames)
+        deaths, ambient = wait_for_frames(args.monitor, MIN_CAPTURES)
+        template, mask, box, scores, dropped = extract_signature(deaths, ambient)
     except KeyboardInterrupt:
         print("\nSetup annule.")
         return 1
@@ -44,14 +45,20 @@ def cmd_setup(args) -> int:
         return 1
 
     save_signature(SIGNATURE_PATH, template, mask)
-    imwrite_png(PREVIEW_PATH, signature_preview(frames[-1], mask, box))
+    imwrite_png(PREVIEW_PATH, signature_preview(deaths[-1], mask, box))
+
+    print(f"\n{len(ambient)} frames de jeu utilisees pour filtrer l'interface.")
+    if dropped:
+        print(f"{dropped} capture(s) ecartee(s) : trop differente(s) des autres.")
+    print(f"Coherence des captures retenues : "
+          f"{min(scores):.2f} a {max(scores):.2f}")
 
     h, w = template.shape
-    print(f"Signature enregistree : {SIGNATURE_PATH}")
-    print(f"  {w}x{h} pixels, {int(mask.sum())} pixels de texte retenus")
-    print(f"\nOuvre {PREVIEW_PATH} pour verifier.")
-    print("Les pixels surlignes doivent dessiner le texte, et rien d'autre.")
-    print("\nVerifie ensuite avec : elden-counter diagnose")
+    print(f"\nSignature enregistree : {SIGNATURE_PATH}")
+    print(f"  {w}x{h} pixels, {int(mask.sum())} pixels retenus")
+    print(f"  apercu : {PREVIEW_PATH}")
+    print("\nLa zone surlignee doit couvrir le texte, et pas l'interface.")
+    print("Verifie ensuite avec : elden-counter diagnose")
     return 0
 
 
@@ -279,7 +286,7 @@ def main(argv=None) -> int:
     p.add_argument("--keep", action="store_true",
                    help="garder le compteur de boss en cours")
     p.add_argument("--port", type=int, default=4747)
-    p.add_argument("--threshold", type=float, default=0.60)
+    p.add_argument("--threshold", type=float, default=0.45)
     p.add_argument("--confirm", type=int, default=3)
     p.add_argument("--manual", action="store_true",
                    help="ne compter qu'aux raccourcis clavier")
@@ -290,7 +297,7 @@ def main(argv=None) -> int:
     p = sub.add_parser("diagnose", parents=[screen],
                        help="enregistrer ce que le detecteur voit")
     p.add_argument("--seconds", type=int, default=25)
-    p.add_argument("--threshold", type=float, default=0.60)
+    p.add_argument("--threshold", type=float, default=0.45)
     p.set_defaults(func=cmd_diagnose)
 
     p = sub.add_parser("capture", parents=[screen],
