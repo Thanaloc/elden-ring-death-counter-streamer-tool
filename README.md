@@ -1,16 +1,17 @@
 # Elden Death Counter
 
-Compteur de morts automatique pour Elden Ring, à afficher en direct dans OBS ou
-Streamlabs. Deux compteurs à l'écran : le total depuis le début, et le nombre de
-morts sur le boss en cours, que tu remets à zéro d'une touche quand tu le bats.
+Compteur de morts automatique pour Elden Ring, à afficher en direct dans OBS
+ou Streamlabs. Deux compteurs à l'écran : le total depuis le début, et le
+nombre de morts sur le boss en cours, que tu remets à zéro d'une touche quand
+tu le bats.
 
-La détection lit uniquement l'image affichée à l'écran. Aucune lecture mémoire,
-aucun hook dans le processus du jeu : rien qui puisse intéresser l'anti-triche.
+La détection lit le texte affiché à l'écran. Aucune lecture mémoire, aucun
+hook dans le processus du jeu : rien qui puisse intéresser l'anti-triche.
 
 ## Installation
 
 **Sans Python.** Télécharge `elden-counter.exe` dans les
-[Releases](../../releases) et pose-le où tu veux.
+[Releases](../../releases).
 
 **Avec Python 3.10 ou plus récent :**
 
@@ -18,39 +19,28 @@ aucun hook dans le processus du jeu : rien qui puisse intéresser l'anti-triche.
 pip install elden-death-counter
 ```
 
+Il faut aussi le moteur Tesseract, avec les données de ta langue de jeu.
+Windows : l'installeur de [UB-Mannheim](https://github.com/UB-Mannheim/tesseract/wiki),
+en cochant la langue voulue. Linux : `apt install tesseract-ocr tesseract-ocr-fra`.
+
 ## Prise en main
 
 ```
-elden-counter setup          # une seule fois
+elden-counter setup
 elden-counter run --boss "Malenia"
 ```
 
-Le setup te demande de mourir une fois et d'appuyer sur F8 pendant que le texte
-est affiché. L'image capturée sert de référence pour toutes les détections
-suivantes. C'est ce qui rend l'outil indépendant de ta résolution, de ton ratio
-d'écran et de la langue de ton jeu.
+Le setup te demande de mourir une fois et d'appuyer sur F8 pendant que le
+texte est affiché. Il repère tout seul la ligne de texte, ouvre une page dans
+ton navigateur pour que tu confirmes le cadre d'un clic, puis lit le texte et
+le mémorise. C'est tout ce dont il a besoin.
+
+Si ton jeu n'est pas en français, précise la langue : `--lang eng`,
+`--lang deu`, `--lang jpn`. L'outil ne connaît aucun texte à l'avance, il
+apprend le tien.
 
 Ajoute ensuite dans OBS une **source navigateur** sur `http://127.0.0.1:4747`,
-en 600×300, largeur et hauteur personnalisées. Le fond est transparent, tu
-positionnes et redimensionnes la source comme tu veux.
-
-## Si des morts passent à travers dans certaines zones
-
-Le texte de mort ne se rend pas de la même façon partout. Dans une caverne
-il ressort nettement ; sous la neige en plein jour, le voile n'assombrit pas
-assez une scène déjà claire et le texte s'y délave au point qu'une signature
-apprise ailleurs ne le reconnaît plus.
-
-Dans ce cas, refais un setup dans la zone qui pose problème en ajoutant
-`--add` :
-
-```
-elden-counter setup --add
-```
-
-La nouvelle signature s'ajoute aux précédentes au lieu de les remplacer, et
-le détecteur retient le meilleur score de l'ensemble. Tu peux en cumuler
-autant que nécessaire.
+en 600×300. Le fond est transparent.
 
 ## Raccourcis pendant le stream
 
@@ -64,35 +54,45 @@ autant que nécessaire.
 ## Autres commandes
 
 ```
+elden-counter diagnose         # voir ce que lit le détecteur, en direct
 elden-counter boss "Radagon"   # changer le boss affiché
 elden-counter history          # revoir tes scores sur les boss battus
 elden-counter reset            # remettre le boss à zéro
 elden-counter reset --all      # tout effacer, historique compris
+elden-counter run --manual     # comptage aux raccourcis uniquement
 ```
+
+## Pourquoi la lecture de texte
+
+La première version corrélait la forme d'une empreinte apprise sur plusieurs
+morts. Ça marchait, mais elle ne comprenait pas ce qu'elle regardait : le bord
+du voile sombre, ou la boîte de dialogue de la carte, lui ressemblaient assez
+pour la déclencher. Il a fallu empiler les garde-fous — constance entre morts,
+exclusion de l'interface, filtrage par forme, contre-exemples, signatures
+multiples — et il restait des angles morts.
+
+Lire le texte est spécifique au sens. Un assombrissement ne lit rien, la carte
+lit autre chose. Sur les mêmes captures réelles qui mettaient la corrélation en
+échec : 7 morts sur 12 lues, **zéro faux positif sur 37 images**, menus et
+carte compris. La pire vraie lecture est à 0,85 de similitude, la pire fausse
+à 0,40.
+
+Les morts non lues sont des images dégradées — fondu, texte délavé sur une
+scène très claire. En fonctionnement, l'écran est analysé deux fois par
+seconde pendant les quelques secondes d'affichage : il suffit qu'une seule
+lecture passe.
 
 ## Réglages
 
-`elden-counter diagnose` enregistre pendant trente secondes ce que voit le
-détecteur.
+`--similarity` ajuste le seuil de ressemblance, 0,60 par défaut. Monte-le si
+un autre écran déclenche à tort, descends-le si des morts passent à travers.
 
-Les seuils par défaut ont été réglés sur de vraies captures d'Elden Ring, pas
-estimés : sur ces mesures, une mort obtient au minimum 0,78 et le jeu normal
-ne dépasse jamais 0,35, d'où le seuil à 0,55. Si l'écart est plus faible chez
-toi, refais le setup en mourant à des endroits vraiment différents.
-
-`--threshold` ajuste le seuil de déclenchement, `--confirm` le nombre d'images
-consécutives requises. Monte `--confirm` si tu as des faux positifs, descends-le
-si des morts passent à travers. Vérifie l'aperçu généré par le setup
-avant de toucher aux seuils : les pixels surlignés doivent dessiner le
-texte et rien d'autre.
+`elden-counter diagnose` affiche en direct ce qui est lu, ligne par ligne.
+C'est le premier endroit où regarder quand quelque chose cloche.
 
 Sur un écran secondaire, précise `--monitor 2`.
 
 ## Ce qui peut poser problème
-
-Le HDR délave les captures sur certaines configurations Windows. Si les scores
-sont anormalement bas, refais le setup HDR activé pour que la référence et
-l'analyse soient cohérentes.
 
 Sous Windows, les raccourcis clavier globaux demandent souvent de lancer le
 terminal en administrateur.

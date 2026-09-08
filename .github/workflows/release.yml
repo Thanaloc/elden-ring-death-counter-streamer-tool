@@ -16,9 +16,17 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install . pyinstaller
+      - name: Recuperer Tesseract
+        run: |
+          choco install tesseract --no-progress -y
+          mkdir tesseract
+          copy "C:\\Program Files\\Tesseract-OCR\\tesseract.exe" tesseract\\
+          copy "C:\\Program Files\\Tesseract-OCR\\*.dll" tesseract\\
+          xcopy /E /I "C:\\Program Files\\Tesseract-OCR\\tessdata" tesseract\\tessdata
       - run: >
           pyinstaller --onefile --name elden-counter
           --add-data "eldencounter/overlay;eldencounter/overlay"
+          --add-data "tesseract;tesseract"
           --collect-submodules keyboard
           --collect-all cv2
           entrypoint.py

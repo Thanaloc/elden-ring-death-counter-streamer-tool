@@ -18,7 +18,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import cv2
-import numpy as np
+import numpy as np  # noqa: F401  (type des captures)
 
 PAGE = """<!DOCTYPE html>
 <html lang="fr">
@@ -54,7 +54,8 @@ PAGE = """<!DOCTYPE html>
 <body>
   <h1>Le cadre est-il sur le texte&nbsp;?</h1>
   <p>Si le cadre entoure le texte de mort, valide. Sinon, trace un rectangle
-     autour du texte pour corriger.</p>
+     autour du texte pour corriger. Serre-le sur les lettres&nbsp;: un cadre
+     trop large fait chuter la lecture.</p>
 
   <div id="stage">
     <img id="shot" src="__IMAGE__" alt="Capture de l'écran de mort">
@@ -136,7 +137,7 @@ PAGE = """<!DOCTYPE html>
 """
 
 
-def confirm_zone(frame: np.ndarray, mask: np.ndarray, box, port: int = 4748):
+def confirm_zone(frame: np.ndarray, box, mask=None, port: int = 4748):
     """
     Affiche la capture avec la zone proposee et retourne la zone validee.
 
@@ -146,8 +147,9 @@ def confirm_zone(frame: np.ndarray, mask: np.ndarray, box, port: int = 4748):
     display = cv2.convertScaleAbs(frame, alpha=2.2, beta=25)
     display = cv2.cvtColor(display, cv2.COLOR_GRAY2BGR)
     x0, y0, x1, y1 = box
-    zone = display[y0:y1, x0:x1]
-    zone[mask > 0] = (90, 220, 255)
+    if mask is not None:
+        display[y0:y1, x0:x1][mask > 0] = (90, 220, 255)
+    cv2.rectangle(display, (x0, y0), (x1 - 1, y1 - 1), (90, 220, 255), 1)
 
     ok, buffer = cv2.imencode(".png", display)
     if not ok:
