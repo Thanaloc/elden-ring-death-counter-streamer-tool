@@ -1,0 +1,28 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write   # necessaire pour creer la Release et y attacher l'exe
+
+jobs:
+  windows-exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install . pyinstaller
+      - run: >
+          pyinstaller --onefile --name elden-counter
+          --add-data "eldencounter/overlay;eldencounter/overlay"
+          --collect-submodules keyboard
+          --collect-all cv2
+          entrypoint.py
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/elden-counter.exe
+          generate_release_notes: true

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Compteur de morts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,500;1,500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bone: #EDE6D6;
+    --gold: #C6A664;
+    --blood: #8E1B18;
+    --rule: rgba(198, 166, 100, .55);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    background: transparent;
+    font-family: "Cormorant Garamond", "EB Garamond", Georgia, serif;
+    font-variant-numeric: lining-nums tabular-nums;
+    overflow: hidden;
+  }
+
+  body {
+    display: flex;
+    align-items: flex-end;
+    padding: 24px;
+  }
+
+  /* La reglette verticale groupe les trois lignes sans boite ni cadre. */
+  .readout {
+    position: relative;
+    padding-left: 22px;
+    line-height: 1;
+    text-shadow:
+      0 1px 2px rgba(0, 0, 0, .9),
+      0 0 18px rgba(0, 0, 0, .7);
+  }
+
+  .readout::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 2px;
+    bottom: 2px;
+    width: 1px;
+    background: linear-gradient(
+      to bottom,
+      transparent,
+      var(--rule) 18%,
+      var(--rule) 82%,
+      transparent
+    );
+    transition: background .6s ease, box-shadow .6s ease;
+  }
+
+  .boss {
+    font-style: italic;
+    font-weight: 500;
+    font-size: clamp(17px, 3.4vh, 30px);
+    letter-spacing: .06em;
+    color: var(--gold);
+    margin-bottom: .28em;
+  }
+
+  .boss:empty { display: none; }
+
+  .tally {
+    font-weight: 300;
+    font-size: clamp(58px, 15vh, 148px);
+    letter-spacing: -.02em;
+    color: var(--bone);
+    display: block;
+  }
+
+  .lifetime {
+    margin-top: .55em;
+    font-weight: 300;
+    font-size: clamp(14px, 2.5vh, 24px);
+    letter-spacing: .03em;
+    color: var(--bone);
+    opacity: .68;
+  }
+
+  /* Un seul moment de mouvement : la mort qui vient d'etre comptee. */
+  @keyframes toll {
+    0%   { color: var(--blood); transform: translateY(-3px); }
+    35%  { color: var(--blood); transform: translateY(0); }
+    100% { color: var(--bone);  transform: translateY(0); }
+  }
+
+  .tally.tolling { animation: toll 900ms cubic-bezier(.16, .84, .44, 1); }
+
+  .readout.tolling::before {
+    background: linear-gradient(to bottom, transparent, var(--blood) 18%, var(--blood) 82%, transparent);
+    box-shadow: 0 0 12px rgba(142, 27, 24, .8);
+  }
+
+  .readout.cleared::before {
+    background: linear-gradient(to bottom, transparent, var(--gold) 10%, var(--gold) 90%, transparent);
+    box-shadow: 0 0 16px rgba(198, 166, 100, .85);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tally.tolling { animation: none; }
+    .readout::before { transition: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="readout" id="readout">
+    <div class="boss" id="boss"></div>
+    <span class="tally" id="tally">0</span>
+    <div class="lifetime" id="lifetime"></div>
+  </div>
+
+<script>
+  const readout = document.getElementById("readout");
+  const bossEl = document.getElementById("boss");
+  const tallyEl = document.getElementById("tally");
+  const lifeEl = document.getElementById("lifetime");
+
+  const fr = new Intl.NumberFormat("fr-FR");
+  let previousTally = null;
+
+  function plural(n) {
+    return n > 1 ? "morts au total" : "mort au total";
+  }
+
+  function render(state) {
+    bossEl.textContent = state.boss_name || "";
+    tallyEl.textContent = fr.format(state.boss_count);
+    lifeEl.textContent = fr.format(state.total) + " " + plural(state.total);
+
+    const counted = state.event === "death" ||
+      (previousTally !== null && state.boss_count > previousTally);
+
+    if (counted) flash("tolling");
+    if (state.event === "cleared") flash("cleared");
+
+    previousTally = state.boss_count;
+  }
+
+  function flash(name) {
+    readout.classList.remove(name);
+    tallyEl.classList.remove("tolling");
+    void readout.offsetWidth;            // force le redemarrage de l'animation
+    readout.classList.add(name);
+    if (name === "tolling") tallyEl.classList.add("tolling");
+    setTimeout(() => {
+      readout.classList.remove(name);
+      tallyEl.classList.remove("tolling");
+    }, name === "cleared" ? 1600 : 900);
+  }
+
+  const source = new EventSource("/events");
+  source.onmessage = (e) => {
+    try { render(JSON.parse(e.data)); } catch (_) {}
+  };
+</script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "elden-death-counter"
+version = "0.1.0"
+description = "Compteur de morts Elden Ring pour OBS et Streamlabs, avec detection automatique de l'ecran de mort."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["elden-ring", "obs", "streamlabs", "overlay", "twitch"]
+dependencies = [
+    "mss>=9.0",
+    "numpy>=1.24",
+    "opencv-python-headless>=4.8",
+    "keyboard>=0.13.5",
+]
+
+[project.scripts]
+elden-counter = "eldencounter.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["eldencounter"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"eldencounter/overlay" = "eldencounter/overlay"
