@@ -219,6 +219,42 @@ def _extract_once(deaths: list, gameplay: list):
             np.ascontiguousarray(text[y0:y1, x0:x1]), (x0, y0, x1, y1))
 
 
+def signature_in_zone(deaths: list, gameplay: list, zone):
+    """
+    Reconstruit la signature en ne gardant que la zone confirmee.
+
+    Tout le travail automatique est conserve : constance entre les morts,
+    exclusion de l'interface, tri par forme. La zone ne fait que borner
+    l'endroit ou l'on cherche.
+    """
+    x0, y0, x1, y1 = zone
+    mask, mean = _candidate_mask(deaths, gameplay)
+
+    limited = np.zeros_like(mask)
+    limited[y0:y1, x0:x1] = mask[y0:y1, x0:x1]
+
+    blocks, labels, stats, _ = _letter_blocks(limited)
+    if not blocks:
+        raise SignatureError("Aucun trait exploitable dans la zone choisie.")
+
+    text = np.isin(labels, blocks).astype(np.uint8)
+    text = cv2.morphologyEx(
+        text, cv2.MORPH_CLOSE,
+        cv2.getStructuringElement(cv2.MORPH_RECT, (15, 5))).astype(np.float32)
+
+    ys, xs = np.nonzero(text)
+    if xs.size < 150:
+        raise SignatureError("Trop peu de pixels retenus dans la zone choisie.")
+
+    pad = 6
+    bx0, by0 = max(0, int(xs.min()) - pad), max(0, int(ys.min()) - pad)
+    bx1 = min(mask.shape[1], int(xs.max()) + pad + 1)
+    by1 = min(mask.shape[0], int(ys.max()) + pad + 1)
+
+    return (np.ascontiguousarray(mean[by0:by1, bx0:bx1]),
+            np.ascontiguousarray(text[by0:by1, bx0:bx1]), (bx0, by0, bx1, by1))
+
+
 def raw_score(frame: np.ndarray, template: np.ndarray, mask: np.ndarray) -> float:
     band = highpass(frame)
     if band.shape[0] < template.shape[0] or band.shape[1] < template.shape[1]:

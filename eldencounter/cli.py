@@ -12,8 +12,9 @@ import mss
 from .counter import DEFAULT_STATE_PATH, DeathLog
 from .detector import (MIN_CAPTURES, DeathDetector, DetectorConfig,
                        SignatureError, crop_band, extract_signature, grab,
-                       imwrite_png, save_signature, signature_preview,
-                       wait_for_frames)
+                       imwrite_png, raw_score, save_signature,
+                       signature_in_zone, signature_preview, wait_for_frames)
+from .setup_ui import confirm_zone
 from .server import serve
 
 SIGNATURE_PATH = DEFAULT_STATE_PATH.parent / "signature.npz"
@@ -21,6 +22,25 @@ FPS = 4
 
 
 PREVIEW_PATH = DEFAULT_STATE_PATH.parent / "apercu-setup.png"
+
+
+SAMPLES_DIR = DEFAULT_STATE_PATH.parent / "echantillons"
+
+
+def _store_samples(deaths, ambient) -> None:
+    """
+    Conserve les captures brutes du setup.
+
+    Un setup qui donne une mauvaise signature n'est diagnosticable qu'avec
+    les images d'origine. Les garder evite d'avoir a tout refaire.
+    """
+    SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
+    for old in SAMPLES_DIR.glob("*.png"):
+        old.unlink()
+    for i, frame in enumerate(deaths, start=1):
+        imwrite_png(SAMPLES_DIR / f"mort-{i}.png", frame)
+    for i, frame in enumerate(ambient, start=1):
+        imwrite_png(SAMPLES_DIR / f"jeu-{i:02d}.png", frame)
 
 
 def cmd_setup(args) -> int:
@@ -36,29 +56,47 @@ def cmd_setup(args) -> int:
 
     try:
         deaths, ambient = wait_for_frames(args.monitor, MIN_CAPTURES)
-        template, mask, box, scores, dropped = extract_signature(deaths, ambient)
     except KeyboardInterrupt:
         print("\nSetup annule.")
         return 1
+
+    _store_samples(deaths, ambient)
+    print(f"\nCaptures conservees dans {SAMPLES_DIR}")
+
+    try:
+        template, mask, box, scores, dropped = extract_signature(deaths, ambient)
     except SignatureError as exc:
         print(f"\n{exc}")
         return 1
 
+    if dropped:
+        print(f"{dropped} capture(s) ecartee(s) : trop differente(s) des autres.")
+    print(f"Coherence des captures retenues : {min(scores):.2f} a {max(scores):.2f}")
+
+    if not args.no_confirm:
+        try:
+            zone = confirm_zone(deaths[-1], mask, box, port=args.port)
+        except KeyboardInterrupt:
+            print("\nSetup annule.")
+            return 1
+        if tuple(zone) != tuple(box):
+            print("Zone corrigee, reconstruction de la signature.")
+            try:
+                template, mask, box = signature_in_zone(deaths, ambient, zone)
+            except SignatureError as exc:
+                print(f"\n{exc}")
+                return 1
+
     save_signature(SIGNATURE_PATH, template, mask)
     imwrite_png(PREVIEW_PATH, signature_preview(deaths[-1], mask, box))
 
-    print(f"\n{len(ambient)} frames de jeu utilisees pour filtrer l'interface.")
-    if dropped:
-        print(f"{dropped} capture(s) ecartee(s) : trop differente(s) des autres.")
-    print(f"Coherence des captures retenues : "
-          f"{min(scores):.2f} a {max(scores):.2f}")
-
+    final = [raw_score(f, template, mask) for f in deaths]
     h, w = template.shape
     print(f"\nSignature enregistree : {SIGNATURE_PATH}")
     print(f"  {w}x{h} pixels, {int(mask.sum())} pixels retenus")
+    print(f"  scores sur les captures : {min(final):.2f} a {max(final):.2f}")
     print(f"  apercu : {PREVIEW_PATH}")
-    print("\nLa zone surlignee doit couvrir le texte, et pas l'interface.")
-    print("Verifie ensuite avec : elden-counter diagnose")
+    print("\nVerifie ensuite avec : elden-counter diagnose")
     return 0
 
 
@@ -278,6 +316,10 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("setup", parents=[screen],
                        help="apprendre a reconnaitre l'ecran de mort")
+    p.add_argument("--port", type=int, default=4748,
+                   help="port de la page de verification")
+    p.add_argument("--no-confirm", action="store_true",
+                   help="accepter la zone detectee sans verification")
     p.set_defaults(func=cmd_setup)
 
     p = sub.add_parser("run", parents=[screen],
