@@ -70,43 +70,13 @@ def crop_band(gray: np.ndarray) -> np.ndarray:
     return gray[int(h * y1):int(h * y2), int(w * x1):int(w * x2)]
 
 
-def find_text_box(band: np.ndarray):
+def wait_for_frame(monitor_index: int):
     """
-    Isole le bloc de texte dans la bande capturee.
+    Attend que l'utilisateur appuie sur F8 et retourne la bande capturee.
 
-    Sur l'ecran de mort, le decor est recouvert d'un voile tres sombre et
-    le texte ressort nettement. On seuille par rapport a la statistique de
-    la bande, on recolle les lettres entre elles, et on garde le plus large
-    bloc horizontal : c'est le texte.
+    Le cadrage du texte se fait ensuite dans le navigateur : voir setup_ui.
     """
-    blur = cv2.GaussianBlur(band, (3, 3), 0)
-    threshold = blur.mean() + 2.0 * blur.std()
-    mask = (blur > threshold).astype(np.uint8)
-
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (31, 5))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    boxes = [cv2.boundingRect(c) for c in contours]
-    boxes = [b for b in boxes if b[2] > band.shape[1] * 0.12 and b[3] > 6]
-    if not boxes:
-        return None
-
-    x, y, w, h = max(boxes, key=lambda b: b[2])
-    pad_x, pad_y = int(w * 0.06), int(h * 0.35)
-    x0 = max(0, x - pad_x)
-    y0 = max(0, y - pad_y)
-    x1 = min(band.shape[1], x + w + pad_x)
-    y1 = min(band.shape[0], y + h + pad_y)
-    return x0, y0, x1, y1
-
-
-def capture_template(monitor_index: int, out_path: Path) -> Path:
-    """
-    Mode setup : l'utilisateur meurt une fois et valide au clavier.
-    Le template obtenu est specifique a sa resolution ET a la langue du jeu.
-    """
-    import keyboard  # import local : seulement necessaire au setup
+    import keyboard  # seulement necessaire au setup
 
     print("Meurs une fois dans le jeu, puis appuie sur F8 pendant que")
     print("le texte est affiche a l'ecran. Echap pour annuler.\n")
@@ -117,40 +87,7 @@ def capture_template(monitor_index: int, out_path: Path) -> Path:
             if keyboard.is_pressed("esc"):
                 raise KeyboardInterrupt
             if keyboard.is_pressed("f8"):
-                band = crop_band(grab(sct, monitor))
-                out_path.parent.mkdir(parents=True, exist_ok=True)
-
-                box = find_text_box(band)
-                if box is None:
-                    raise ValueError(
-                        "Aucun bloc de texte trouve dans la zone analysee.\n"
-                        "Verifie que tu analyses bien l'ecran du jeu "
-                        "(option --monitor) et que le texte etait affiche."
-                    )
-                x0, y0, x1, y1 = box
-                template = band[y0:y1, x0:x1]
-
-                # Apercu annote : c'est la seule facon de verifier de visu
-                # que le setup a cadre le bon element.
-                preview = cv2.cvtColor(band, cv2.COLOR_GRAY2BGR)
-                cv2.rectangle(preview, (x0, y0), (x1, y1), (80, 220, 80), 2)
-                preview_path = out_path.with_name("apercu-setup.png")
-                imwrite_png(preview_path, preview)
-
-                if not imwrite_png(out_path, template):
-                    raise OSError(f"Impossible d'ecrire le template dans {out_path}")
-
-                # On relit ce qu'on vient d'ecrire : un fichier illisible
-                # ici vaut mieux qu'une erreur au milieu d'un stream.
-                if imread_gray(out_path) is None:
-                    raise OSError(f"Template ecrit mais illisible : {out_path}")
-
-                print(f"Template enregistre : {out_path}")
-                print(f"  {template.shape[1]}x{template.shape[0]} pixels, "
-                      f"{out_path.stat().st_size} octets")
-                print(f"\nOuvre {preview_path} pour verifier.")
-                print("Le rectangle vert doit entourer le texte, et rien d'autre.")
-                return out_path
+                return crop_band(grab(sct, monitor))
             time.sleep(0.05)
 
 

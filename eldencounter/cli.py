@@ -10,12 +10,16 @@ from pathlib import Path
 import mss
 
 from .counter import DEFAULT_STATE_PATH, DeathLog
-from .detector import (DeathDetector, DetectorConfig, capture_template,
-                       crop_band, grab, imwrite_png)
+from .detector import (DeathDetector, DetectorConfig, crop_band, grab,
+                       imwrite_png, wait_for_frame)
+from .setup_ui import crop_in_browser, save_template
 from .server import serve
 
 TEMPLATE_PATH = DEFAULT_STATE_PATH.parent / "template.png"
 FPS = 4
+
+
+PREVIEW_PATH = DEFAULT_STATE_PATH.parent / "apercu-setup.png"
 
 
 def cmd_setup(args) -> int:
@@ -26,11 +30,35 @@ def cmd_setup(args) -> int:
         print()
 
     try:
-        capture_template(args.monitor, TEMPLATE_PATH)
+        band = wait_for_frame(args.monitor)
     except KeyboardInterrupt:
         print("\nSetup annule.")
         return 1
-    print("\nC'est pret. Lance maintenant : elden-counter run")
+
+    print("Capture faite.\n")
+
+    result = {}
+
+    def on_crop(x0, y0, x1, y1):
+        template = save_template(band, (x0, y0, x1, y1),
+                                 TEMPLATE_PATH, PREVIEW_PATH)
+        result["shape"] = template.shape
+
+    try:
+        crop_in_browser(band, on_crop, port=args.port)
+    except KeyboardInterrupt:
+        print("\nSetup annule.")
+        return 1
+
+    if "shape" not in result:
+        print("Aucun cadrage enregistre.")
+        return 1
+
+    h, w = result["shape"]
+    print(f"Template enregistre : {TEMPLATE_PATH}")
+    print(f"  {w}x{h} pixels, {TEMPLATE_PATH.stat().st_size} octets")
+    print(f"  apercu : {PREVIEW_PATH}")
+    print("\nVerifie maintenant avec : elden-counter diagnose")
     return 0
 
 
@@ -189,7 +217,9 @@ def main(argv=None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("setup", parents=[screen],
-                       help="capturer l'image de reference de l'ecran de mort")
+                       help="capturer et cadrer l'image de reference")
+    p.add_argument("--port", type=int, default=4748,
+                   help="port de la page de cadrage")
     p.set_defaults(func=cmd_setup)
 
     p = sub.add_parser("run", parents=[screen],
