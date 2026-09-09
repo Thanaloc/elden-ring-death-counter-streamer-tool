@@ -88,15 +88,44 @@ def _locate_binary() -> Path | None:
     return None
 
 
+def user_tessdata() -> Path:
+    """
+    Dossier de langues persistant, dans le repertoire de l'outil.
+
+    Celui embarque dans l'executable vit dans un dossier temporaire recree
+    a chaque lancement : impossible d'y deposer quoi que ce soit. On recopie
+    donc son contenu une fois dans un emplacement stable, ou l'utilisateur
+    peut ajouter les langues qui lui manquent.
+    """
+    return Path.home() / ".elden-death-counter" / "tessdata"
+
+
+def _prepare_tessdata(binary: Path) -> Path | None:
+    bundled = binary.parent / "tessdata"
+    if _bundle_root() is None:
+        return bundled if bundled.is_dir() else None
+
+    target = user_tessdata()
+    target.mkdir(parents=True, exist_ok=True)
+    if bundled.is_dir():
+        for source in bundled.glob("*.traineddata"):
+            destination = target / source.name
+            if not destination.exists():
+                try:
+                    shutil.copy2(source, destination)
+                except OSError:
+                    pass
+    return target
+
+
 def tessdata_dir() -> Path | None:
-    binary = _locate_binary()
-    if binary is None:
-        return None
-    local = binary.parent / "tessdata"
-    if local.is_dir():
-        return local
     prefix = os.environ.get("TESSDATA_PREFIX")
-    return Path(prefix) if prefix and Path(prefix).is_dir() else None
+    if prefix and Path(prefix).is_dir():
+        return Path(prefix)
+    binary = _locate_binary()
+    if binary is not None and (binary.parent / "tessdata").is_dir():
+        return binary.parent / "tessdata"
+    return None
 
 
 def missing_language_help(lang: str) -> str:
@@ -108,6 +137,8 @@ def missing_language_help(lang: str) -> str:
     ]
     if folder is not None:
         lines.append(f"et depose-le dans :\n  {folder}")
+        lines.append("\nCe dossier est conserve d'un lancement a l'autre : "
+                     "le fichier n'est a deposer qu'une fois.")
     else:
         lines.append("et depose-le dans le dossier tessdata de ton installation.")
     return "\n".join(lines)
@@ -130,8 +161,8 @@ def require_tesseract() -> None:
     binary = _locate_binary()
     if binary is not None:
         pytesseract.pytesseract.tesseract_cmd = str(binary)
-        tessdata = binary.parent / "tessdata"
-        if tessdata.is_dir():
+        tessdata = _prepare_tessdata(binary)
+        if tessdata is not None:
             # setdefault ne suffit pas : une variable heritee du systeme
             # pointerait vers une autre installation que celle retenue.
             os.environ["TESSDATA_PREFIX"] = str(tessdata)

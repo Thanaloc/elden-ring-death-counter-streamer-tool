@@ -29,6 +29,11 @@ en cochant la langue voulue. Linux : `apt install tesseract-ocr tesseract-ocr-fr
 Il est cherché dans le PATH puis aux emplacements d'installation habituels, il
 n'est donc pas nécessaire de l'ajouter au PATH à la main.
 
+Les données de langue sont recopiées au premier lancement dans
+`~/.elden-death-counter/tessdata`. Pour ajouter une langue absente, dépose le
+fichier `.traineddata` correspondant dans ce dossier : il est conservé d'un
+lancement à l'autre, contrairement à celui embarqué dans l'exécutable.
+
 ## Prise en main
 
 ```
