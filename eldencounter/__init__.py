@@ -1,3 +1,3 @@
-"""Compteur de morts Elden Ring pour OBS et Streamlabs."""
+"""Elden Ring death counter for OBS and Streamlabs."""
 
-__version__ = "0.9.2"
+__version__ = "0.10.0"

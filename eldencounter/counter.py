@@ -1,9 +1,6 @@
-"""
-Double compteur : un total qui ne redescend jamais tout seul, et un
-compteur de boss que le streamer remet a zero quand il veut.
+"""Two counters: a lifetime total, and a per-boss tally the streamer resets.
 
-L'etat est persiste sur disque a chaque mutation, pour survivre a un
-crash d'OBS ou du script en plein milieu d'un stream.
+State is written to disk on every change, so a crash mid-stream costs nothing.
 """
 
 from __future__ import annotations
@@ -28,7 +25,7 @@ class DeathLog:
         self._listeners: list = []
         self._state = self._load()
 
-    # ------------------------------------------------------------ stockage
+    # -------------------------------------------------------------- storage
 
     def _load(self) -> dict:
         if self.path.exists():
@@ -49,10 +46,10 @@ class DeathLog:
                        encoding="utf-8")
         os.replace(tmp, self.path)
 
-    # ------------------------------------------------------------ diffusion
+    # ------------------------------------------------------------ broadcast
 
     def subscribe(self, callback) -> None:
-        """callback(snapshot: dict) appele a chaque changement."""
+        """callback(snapshot: dict) is called on every change."""
         with self._lock:
             self._listeners.append(callback)
 
@@ -89,7 +86,7 @@ class DeathLog:
             return self._commit("death")
 
     def adjust(self, delta: int) -> dict:
-        """Correction manuelle : s'applique aux deux compteurs."""
+        """Manual correction, applied to both counters."""
         with self._lock:
             self._state["total"] = max(0, self._state["total"] + delta)
             self._state["boss"]["count"] = max(0, self._state["boss"]["count"] + delta)
@@ -103,18 +100,18 @@ class DeathLog:
             return self._commit()
 
     def reset_boss(self) -> dict:
-        """Remet le compteur de boss a zero sans rien archiver."""
+        """Zero the boss counter without archiving anything."""
         with self._lock:
             self._state["boss"]["count"] = 0
             return self._commit()
 
     def clear_boss(self, next_boss: str = "") -> dict:
-        """Boss vaincu : on archive le score puis on repart de zero."""
+        """Boss defeated: archive the score, then start over."""
         with self._lock:
             boss = self._state["boss"]
             if boss["name"] or boss["count"]:
                 self._state["history"].append({
-                    "name": boss["name"] or "Boss sans nom",
+                    "name": boss["name"] or "Unnamed boss",
                     "deaths": boss["count"],
                     "cleared_at": _now(),
                 })
@@ -124,7 +121,8 @@ class DeathLog:
 
     def reset_all(self) -> dict:
         with self._lock:
-            self._state = {"total": 0, "boss": {"name": "", "count": 0}, "history": []}
+            self._state = {"total": 0, "boss": {"name": "", "count": 0},
+                           "history": []}
             return self._commit()
 
     @property

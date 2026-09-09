@@ -1,12 +1,10 @@
-"""
-Confirmation de la zone detectee, dans le navigateur.
+"""Confirming the detected zone, in the browser.
 
-L'extraction automatique trouve la bonne zone la plupart du temps, mais
-quand elle se trompe elle le fait en silence et le streamer ne s'en rend
-compte qu'en constatant que rien ne s'incremente. Un coup d'oeil et un clic
-au moment du setup coutent dix secondes et suppriment ce mode de panne.
+Automatic locating gets it right most of the time, but when it fails it
+fails silently, and the streamer only finds out when nothing increments.
+A glance and a click at setup cost ten seconds and remove that failure mode.
 
-La detection reste automatique : cette page propose deja une reponse.
+Detection stays automatic: this page already proposes an answer.
 """
 
 from __future__ import annotations
@@ -18,13 +16,13 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import cv2
-import numpy as np  # noqa: F401  (type des captures)
+import numpy as np  # noqa: F401  (capture type hints)
 
 PAGE = """<!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Vérifier la zone détectée</title>
+<title>Check the detected zone</title>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;500&display=swap" rel="stylesheet">
 <style>
   :root { --bone:#EDE6D6; --gold:#C6A664; --ground:#141210; }
@@ -52,22 +50,22 @@ PAGE = """<!DOCTYPE html>
 </style>
 </head>
 <body>
-  <h1>Le cadre est-il sur le texte&nbsp;?</h1>
-  <p>Si le cadre entoure le texte de mort, valide. Sinon, trace un rectangle
-     autour du texte pour corriger. Serre-le sur les lettres&nbsp;: un cadre
-     trop large fait chuter la lecture.</p>
+  <h1>Is the box on the text?</h1>
+  <p>If the box surrounds the death text, confirm it. Otherwise drag a
+     rectangle around the text. Keep it tight on the letters: too wide a box
+     hurts the reading.</p>
 
   <div id="stage">
-    <img id="shot" src="__IMAGE__" alt="Capture de l'écran de mort">
+    <img id="shot" src="__IMAGE__" alt="Capture of the death screen">
     <div id="box"></div>
   </div>
 
   <div id="bar">
-    <button id="ok">C'est le bon cadre</button>
-    <button id="reset" class="ghost">Rétablir la proposition</button>
+    <button id="ok">Use this box</button>
+    <button id="reset" class="ghost">Restore suggestion</button>
     <span id="status"></span>
   </div>
-  <div id="done">Enregistré. Tu peux fermer cet onglet et revenir au terminal.</div>
+  <div id="done">Saved. You can close this tab and go back to the terminal.</div>
 
 <script>
   const DETECTED = __BOX__;
@@ -109,12 +107,12 @@ PAGE = """<!DOCTYPE html>
     origin = null;
     const w = rect.x1 - rect.x0, h = rect.y1 - rect.y0;
     status.textContent = (w > 20 && h > 8)
-      ? Math.round(w) + " × " + Math.round(h) + " pixels"
-      : "Rectangle trop petit.";
+      ? Math.round(w) + " x " + Math.round(h) + " pixels"
+      : "Rectangle too small.";
   });
 
   document.getElementById("reset").addEventListener("click", () => {
-    show(DETECTED); status.textContent = "Proposition rétablie.";
+    show(DETECTED); status.textContent = "Suggestion restored.";
   });
 
   document.getElementById("ok").addEventListener("click", async () => {
@@ -127,7 +125,7 @@ PAGE = """<!DOCTYPE html>
       document.getElementById("bar").style.display = "none";
       document.getElementById("done").style.display = "block";
       status.textContent = "";
-    } else { status.textContent = "Échec, réessaie."; }
+    } else { status.textContent = "Failed, try again."; }
   });
 
   window.addEventListener("load", () => show(DETECTED));
@@ -138,11 +136,10 @@ PAGE = """<!DOCTYPE html>
 
 
 def confirm_zone(frame: np.ndarray, box, mask=None, port: int = 4748):
-    """
-    Affiche la capture avec la zone proposee et retourne la zone validee.
+    """Show the capture with the proposed zone and return the confirmed one.
 
-    Retourne un tuple (x0, y0, x1, y1) : celui propose si l'utilisateur
-    valide tel quel, ou celui qu'il a trace.
+    Returns (x0, y0, x1, y1): the proposal if accepted as is, or whatever the
+    user drew instead.
     """
     display = cv2.convertScaleAbs(frame, alpha=2.2, beta=25)
     display = cv2.cvtColor(display, cv2.COLOR_GRAY2BGR)
@@ -153,7 +150,7 @@ def confirm_zone(frame: np.ndarray, box, mask=None, port: int = 4748):
 
     ok, buffer = cv2.imencode(".png", display)
     if not ok:
-        raise OSError("Impossible d'encoder la capture.")
+        raise OSError("Could not encode the capture.")
 
     page = (PAGE
             .replace("__IMAGE__", "data:image/png;base64,"
@@ -204,8 +201,8 @@ def confirm_zone(frame: np.ndarray, box, mask=None, port: int = 4748):
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
 
     url = f"http://127.0.0.1:{port}"
-    print(f"Verifie la zone detectee sur {url}")
-    print("(la page devrait s'ouvrir toute seule)\n")
+    print(f"Check the detected zone at {url}")
+    print("(the page should open on its own)\n")
     try:
         webbrowser.open(url)
     except Exception:

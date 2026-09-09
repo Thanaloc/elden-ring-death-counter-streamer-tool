@@ -5,7 +5,7 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write   # necessaire pour creer la Release et y attacher l'exe
+  contents: write   # needed to create the Release and attach the exe
 
 jobs:
   windows-exe:
@@ -19,7 +19,7 @@ jobs:
 
       - run: pip install . pyinstaller
 
-      - name: Preparer Tesseract et ses langues
+      - name: Prepare Tesseract and its languages
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -29,7 +29,7 @@ jobs:
 
           $src = "C:\Program Files\Tesseract-OCR"
           if (-not (Test-Path "$src\tesseract.exe")) {
-            throw "Tesseract introuvable dans $src apres installation"
+            throw "Tesseract not found in $src after install"
           }
 
           New-Item -ItemType Directory -Force -Path "tesseract\tessdata" | Out-Null
@@ -37,26 +37,26 @@ jobs:
           Copy-Item "$src\*.dll" "tesseract\"
           Copy-Item "$src\tessdata\*.traineddata" "tesseract\tessdata\"
 
-          # Chocolatey ne livre que l'anglais. Sans ces fichiers, l'outil est
-          # inutilisable pour un joueur qui ne joue pas en anglais : un echec
-          # ici doit casser le build, pas passer inapercu.
+          # Chocolatey ships English only. Without these files the tool is
+          # useless to anyone not playing in English, so a failure here must
+          # break the build rather than slip through.
           foreach ($lang in @("fra", "deu", "spa", "ita", "por", "rus")) {
             $out = "tesseract\tessdata\$lang.traineddata"
             $url = "https://github.com/tesseract-ocr/tessdata_fast/raw/main/$lang.traineddata"
             Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing
             $size = (Get-Item $out).Length
             if ($size -lt 100000) {
-              throw "$lang.traineddata fait $size octets : telechargement invalide"
+              throw "$lang.traineddata is $size bytes: bad download"
             }
-            Write-Host "$lang : $size octets"
+            Write-Host "$lang : $size bytes"
           }
 
-          Write-Host "`nContenu de tesseract\tessdata :"
+          Write-Host "`nContents of tesseract\tessdata:"
           Get-ChildItem "tesseract\tessdata" | ForEach-Object {
-            Write-Host ("  {0}  {1} octets" -f $_.Name, $_.Length)
+            Write-Host ("  {0}  {1} bytes" -f $_.Name, $_.Length)
           }
 
-      - name: Construire l'executable
+      - name: Build the executable
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -67,14 +67,14 @@ jobs:
             --collect-all cv2 `
             entrypoint.py
 
-      - name: Verifier l'executable
+      - name: Verify the executable
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           .\dist\elden-counter.exe --version
-          # Le bundle doit contenir les langues : sinon la Release est cassee
-          # et il vaut mieux le savoir ici que chez l'utilisateur.
-          .\dist\elden-counter.exe langues
+          # The bundle must carry the languages: better to find out here
+          # than at the user's machine.
+          .\dist\elden-counter.exe languages
 
       - uses: softprops/action-gh-release@v2
         with:

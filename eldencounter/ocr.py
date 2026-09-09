@@ -1,18 +1,17 @@
 """
-Detection de l'ecran de mort par lecture du texte.
+Death screen detection by reading the text.
 
-L'approche precedente correlait la forme d'une empreinte apprise. Elle
-marchait, mais elle ne comprenait pas ce qu'elle regardait : un bord de
-voile ou la boite de dialogue de la carte lui ressemblaient assez pour la
-declencher, et il fallait tout un echafaudage pour les ecarter.
+The earlier approach matched the shape of a learned fingerprint. It worked,
+but it had no idea what it was looking at: the edge of the dark veil, or the
+map dialog, resembled it enough to trigger a count.
 
-Lire le texte est specifique au sens. Un assombrissement ne lit rien, la
-carte lit autre chose. Mesure sur des captures reelles : 8 morts sur 12
-lues, aucun faux positif sur 37 images dont menus et carte.
+Reading the text is specific to meaning. A darkened band reads as nothing,
+the map reads as something else. Measured on real captures: 8 deaths out of
+12 read, no false positive across 37 images including menus and map.
 
-Les 4 morts non lues sont des images degradees (fondu, texte delave). En
-fonctionnement on analyse plusieurs images par seconde pendant les
-secondes d'affichage : il suffit qu'une seule passe.
+The 4 unread deaths are degraded frames (mid-fade, washed out). At runtime
+the screen is checked several times per second while the text is up, so one
+successful read is enough.
 """
 
 from __future__ import annotations
@@ -38,9 +37,9 @@ except ImportError:                                   # pragma: no cover
 TESSERACT_CONFIG = "--psm 7"
 UPSCALE = 3
 
-# Emplacements ou chercher le moteur, dans l'ordre : celui embarque dans
-# l'executable, puis les installations classiques. pytesseract ne regarde
-# que le PATH par defaut, ou Tesseract n'est presque jamais.
+# Where to look for the engine: the copy bundled in the executable first,
+# then the usual installs. pytesseract only checks PATH, where Tesseract
+# almost never is.
 BUNDLED_SUBDIR = "tesseract"
 WINDOWS_PATHS = (
     r"C:\Program Files\Tesseract-OCR\tesseract.exe",
@@ -55,18 +54,17 @@ class OcrUnavailable(RuntimeError):
 
 
 def _bundle_root() -> Path | None:
-    """Dossier ou PyInstaller a decompresse les ressources, s'il y en a un."""
+    """Where PyInstaller unpacked resources, if it did."""
     base = getattr(sys, "_MEIPASS", None)
     return Path(base) if base else None
 
 
 def _candidate_binaries():
-    """
-    La copie embarquee passe avant celle du systeme.
+    """The bundled copy wins over the system one.
 
-    Une installation faite a la main contient souvent le seul anglais ; la
-    copie livree avec l'executable, elle, embarque les langues courantes.
-    Chercher le PATH en premier reviendrait a preferer la moins fournie.
+    A hand-made install often ships English only, while the copy shipped with
+    the executable carries the common languages. Checking PATH first would
+    prefer the poorer one.
     """
     root = _bundle_root()
     if root is not None:
@@ -94,11 +92,10 @@ def _is_ascii(path: Path) -> bool:
 
 
 def _short_path(path: Path) -> Path:
-    """
-    Forme courte 8.3 d'un chemin Windows, quand elle existe.
+    """Windows 8.3 short form of a path, when one exists.
 
-    C:\\Users\\Raphael Seguin devient C:\\Users\\RAPHAL~1, qui a le bon gout
-    d'etre en ASCII pur.
+    C:\\Users\\Jean Francois becomes C:\\Users\\JEANFR~1, which has the good
+    taste of being pure ASCII.
     """
     if os.name != "nt":
         return path
@@ -120,17 +117,16 @@ def _short_path(path: Path) -> Path:
 
 
 def user_tessdata() -> Path:
-    """
-    Dossier de langues persistant, garanti sans caractere accentue.
+    """Persistent language folder, guaranteed free of accented characters.
 
-    Celui embarque dans l'executable vit dans un dossier temporaire recree
-    a chaque lancement : impossible d'y deposer quoi que ce soit. Mais le
-    dossier personnel ne convient pas non plus des que le nom d'utilisateur
-    contient un accent : Tesseract echoue alors sur "Illegal byte sequence",
-    car il ouvre ses fichiers par une API qui ne gere pas l'Unicode.
+    The one bundled in the executable lives in a temp folder recreated on
+    every launch, so nothing can be added to it. But the home folder is no
+    good either once the username contains an accent: Tesseract then fails
+    with "Illegal byte sequence", because it opens files through an API that
+    does not handle Unicode.
 
-    On essaie donc, dans l'ordre : le dossier personnel s'il est en ASCII,
-    sa forme courte 8.3, puis un emplacement systeme neutre.
+    Tried in order: the home folder if it is ASCII, its 8.3 short form, then
+    a neutral system location.
     """
     home = Path.home() / ".elden-death-counter" / "tessdata"
     if _is_ascii(home):
@@ -153,8 +149,8 @@ def user_tessdata() -> Path:
 def _prepare_tessdata(binary: Path) -> Path | None:
     bundled = binary.parent / "tessdata"
     if _bundle_root() is None:
-        # Installation classique : on ne recopie rien, sauf si le chemin
-        # est accentue et donc illisible pour Tesseract.
+        # Regular install: copy nothing, unless the path is accented and
+        # therefore unreadable by Tesseract.
         if bundled.is_dir() and not _is_ascii(bundled):
             short = _short_path(bundled)
             return short if _is_ascii(short) else bundled
@@ -184,33 +180,32 @@ def tessdata_dir() -> Path | None:
 
 
 def missing_language_help(lang: str) -> str:
-    """Explique comment ajouter une langue absente, avec le chemin exact."""
+    """Explain how to add a missing language, with the exact path."""
     folder = tessdata_dir()
     lines = [
-        f"Telecharge {lang}.traineddata depuis :",
+        f"Download {lang}.traineddata from:",
         f"  https://github.com/tesseract-ocr/tessdata_fast/raw/main/{lang}.traineddata",
     ]
     if folder is not None:
-        lines.append(f"et depose-le dans :\n  {folder}")
-        lines.append("\nCe dossier est conserve d'un lancement a l'autre : "
-                     "le fichier n'est a deposer qu'une fois.")
+        lines.append(f"and drop it in:\n  {folder}")
+        lines.append("\nThis folder persists between runs, so you only need to "
+                     "do it once.")
     else:
-        lines.append("et depose-le dans le dossier tessdata de ton installation.")
+        lines.append("and drop it in your install's tessdata folder.")
     return "\n".join(lines)
 
 
 def require_tesseract() -> None:
-    """
-    S'assure que le moteur est utilisable, et le configure si besoin.
+    """Make sure the engine is usable, configuring it if needed.
 
-    L'executable embarque sa propre copie de Tesseract ; encore faut-il
-    indiquer a pytesseract ou elle se trouve, et ou sont les donnees de
-    langue, sans quoi il ne regarde que le PATH.
+    The executable ships its own copy of Tesseract, but pytesseract still
+    has to be told where it is and where the language data lives, otherwise
+    it only looks at PATH.
     """
     if pytesseract is None:
         raise OcrUnavailable(
-            "Le module pytesseract n'est pas installe.\n"
-            "pip install pytesseract, et installe le moteur Tesseract."
+            "The pytesseract module is not installed.\n"
+            "Run: pip install pytesseract, then install the Tesseract engine."
         )
 
     binary = _locate_binary()
@@ -220,19 +215,19 @@ def require_tesseract() -> None:
         if tessdata is not None:
             if not _is_ascii(tessdata):
                 tessdata = _short_path(tessdata)
-            # setdefault ne suffit pas : une variable heritee du systeme
-            # pointerait vers une autre installation que celle retenue.
+            # setdefault is not enough: a value inherited from the system
+            # would point at a different install than the one selected.
             os.environ["TESSDATA_PREFIX"] = str(tessdata)
 
     prefix = os.environ.get("TESSDATA_PREFIX", "")
     if prefix and not prefix.isascii():
         raise OcrUnavailable(
-            "Le dossier des donnees de langue contient un caractere "
-            f"accentue :\n  {prefix}\n\n"
-            "Tesseract ne sait pas ouvrir un tel chemin. Definis "
-            "TESSDATA_PREFIX vers un dossier sans accent, par exemple "
-            "C:\\ProgramData\\elden-death-counter\\tessdata, et copies-y "
-            "les fichiers .traineddata."
+            "The language data folder contains an accented character:\n"
+            f"  {prefix}\n\n"
+            "Tesseract cannot open such a path. Point TESSDATA_PREFIX at a "
+            "folder without accents, for example "
+            "C:\\ProgramData\\elden-death-counter\\tessdata, and copy the "
+            ".traineddata files there."
         )
 
     try:
@@ -240,11 +235,11 @@ def require_tesseract() -> None:
     except Exception as exc:
         tried = "\n".join(f"  {c}" for c in _candidate_binaries())
         raise OcrUnavailable(
-            "Tesseract est introuvable sur ce systeme.\n"
-            "Windows : https://github.com/UB-Mannheim/tesseract/wiki\n"
-            "  (coche bien ta langue de jeu pendant l'installation)\n"
-            "Linux : apt install tesseract-ocr tesseract-ocr-fra\n"
-            f"\nEmplacements essayes :\n{tried}\n"
+            "Tesseract was not found on this system.\n"
+            "Windows: https://github.com/UB-Mannheim/tesseract/wiki\n"
+            "  (tick your game's language during install)\n"
+            "Linux: apt install tesseract-ocr\n"
+            f"\nLocations tried:\n{tried}\n"
             f"\n({exc})"
         ) from exc
 
@@ -257,19 +252,18 @@ def available_languages() -> list:
 
 
 def normalise(text: str) -> str:
-    """Majuscules sans accents ni ponctuation, pour comparer sans bruit."""
+    """Uppercase, no accents or punctuation, so comparison is noise-free."""
     text = unicodedata.normalize("NFD", text.upper())
     return "".join(c for c in text if c.isalpha() and ord(c) < 128)
 
 
 def variants(crop: np.ndarray) -> list:
-    """
-    Trois preparations de l'image, essayees en parallele.
+    """Three preparations of the image, all tried.
 
-    Aucune ne suffit seule : le texte est tantot plus clair que le fond,
-    tantot plus sombre, et son contraste varie enormement d'une zone du
-    jeu a l'autre. Cette combinaison a lu 8 captures sur 12 la ou la
-    meilleure preparation seule en lisait 7.
+    None is enough alone: the text is sometimes lighter than its background,
+    sometimes darker, and its contrast varies enormously between areas of the
+    game. This combination read 8 captures out of 12, where the best single
+    preparation read 7.
     """
     stretched = cv2.normalize(crop, None, 0, 255, cv2.NORM_MINMAX)
     big = cv2.resize(stretched, None, fx=UPSCALE, fy=UPSCALE,
@@ -284,12 +278,10 @@ def variants(crop: np.ndarray) -> list:
 
 
 def read_text_verbose(crop: np.ndarray, lang: str):
-    """
-    Textes lus, un par preparation, et les erreurs rencontrees.
+    """Texts read, one per preparation, plus any errors.
 
-    Distinguer "rien a lire" de "le moteur a echoue" est indispensable :
-    les deux donnent une chaine vide, mais appellent des corrections
-    completement differentes.
+    Telling "nothing to read" apart from "the engine failed" matters: both
+    yield an empty string, but call for completely different fixes.
     """
     config = f"{TESSERACT_CONFIG} -l {lang}"
     texts, errors = [], []
@@ -309,10 +301,9 @@ def read_text(crop: np.ndarray, lang: str) -> list:
 
 
 def locate_text(band: np.ndarray, lang: str):
-    """
-    Propose la zone du texte en demandant a Tesseract ou il voit des mots.
+    """Propose the text zone by asking Tesseract where it sees words.
 
-    Retourne (x0, y0, x1, y1) dans le repere de la bande, ou None.
+    Returns (x0, y0, x1, y1) in band coordinates, or None.
     """
     stretched = cv2.normalize(band, None, 0, 255, cv2.NORM_MINMAX)
     big = cv2.resize(stretched, None, fx=UPSCALE, fy=UPSCALE,
@@ -325,7 +316,7 @@ def locate_text(band: np.ndarray, lang: str):
                 image, config=f"--psm 6 -l {lang}",
                 output_type=pytesseract.Output.DICT)
         except Exception as exc:
-            print(f"  (reperage automatique indisponible : "
+            print(f"  (automatic locating unavailable: "
                   f"{str(exc).strip()[:120]})")
             continue
 
@@ -334,7 +325,7 @@ def locate_text(band: np.ndarray, lang: str):
         if not words:
             continue
 
-        # La ligne la plus fournie : le texte de mort tient sur une ligne.
+        # The busiest line: the death text sits on a single line.
         lines = {}
         for i in words:
             key = (data["block_num"][i], data["par_num"][i], data["line_num"][i])
@@ -361,7 +352,7 @@ def locate_text(band: np.ndarray, lang: str):
 
 @dataclass
 class Detection:
-    """Ce qu'il faut retenir du setup : ou regarder, et quoi y lire."""
+    """What setup produces: where to look, and what to read there."""
     zone: tuple
     reference: str
     lang: str = "fra"
@@ -388,7 +379,7 @@ class Detection:
 
 @dataclass
 class DetectorConfig:
-    similarity: float = 0.60   # mesure : vraies morts >= 0.85, reste <= 0.40
+    similarity: float = 0.60   # measured: true deaths >= 0.85, rest <= 0.40
     confirm_frames: int = 1
     rearm_seconds: float = 8.0
 
@@ -405,7 +396,7 @@ class TextDetector:
         self.last_text = ""
 
     def score(self, band: np.ndarray) -> float:
-        """Similitude entre ce qui est lu dans la zone et le texte de reference."""
+        """Similarity between what is read in the zone and the reference."""
         x0, y0, x1, y1 = self.detection.zone
         crop = band[y0:y1, x0:x1]
         if crop.size == 0:
@@ -422,7 +413,7 @@ class TextDetector:
         return best
 
     def update(self, band: np.ndarray, now: float) -> bool:
-        """A appeler regulierement. Retourne True une seule fois par mort."""
+        """Call regularly. Returns True once per death."""
         hit = self.score(band) >= self.cfg.similarity
 
         if hit:

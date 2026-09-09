@@ -1,4 +1,4 @@
-"""Capture d'ecran et decoupe de la bande analysee."""
+"""Screen capture and cropping of the analysed band."""
 
 from __future__ import annotations
 
@@ -9,15 +9,19 @@ import cv2
 import mss
 import numpy as np
 
-# Bande de l'ecran ou apparait le texte, en fractions (x1, y1, x2, y2).
+# Where the death text appears, as fractions of the screen (x1, y1, x2, y2).
 SEARCH_BAND = (0.15, 0.30, 0.85, 0.66)
 
-# Largeur de travail : setup et detection partagent la meme echelle.
+# Working width: setup and detection must share the same scale.
 WORK_WIDTH = 960
 
 
 def imread_gray(path: Path):
-    """Lecture tolerante aux chemins non-ASCII (cv2.imread passe par l'API ANSI)."""
+    """Read an image, tolerating non-ASCII paths.
+
+    cv2.imread goes through the Windows ANSI API and fails silently as soon
+    as the path contains an accent.
+    """
     try:
         data = np.fromfile(str(path), dtype=np.uint8)
     except OSError:
@@ -28,7 +32,7 @@ def imread_gray(path: Path):
 
 
 def imwrite_png(path: Path, image: np.ndarray) -> bool:
-    """Ecriture tolerante aux chemins non-ASCII. Retourne le succes reel."""
+    """Write a PNG, tolerating non-ASCII paths. Returns real success."""
     ok, buffer = cv2.imencode(".png", image)
     if not ok:
         return False
@@ -55,11 +59,11 @@ def crop_band(gray: np.ndarray) -> np.ndarray:
 
 
 def wait_for_death(monitor_index: int) -> np.ndarray:
-    """Attend un appui sur F8 et retourne la bande capturee."""
+    """Wait for F8 and return the captured band."""
     import keyboard
 
-    print("Meurs une fois, puis appuie sur F8 pendant que le texte est")
-    print("affiche a l'ecran. Echap pour annuler.\n")
+    print("Die once, then press F8 while the death text is on screen.")
+    print("Esc to cancel.\n")
 
     with mss.mss() as sct:
         monitor = sct.monitors[monitor_index]

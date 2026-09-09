@@ -1,7 +1,5 @@
-"""
-Serveur local : sert l'overlay et pousse les mises a jour en Server-Sent
-Events. Uniquement de la bibliotheque standard, pour que PyInstaller
-produise un binaire leger.
+"""Local server: serves the overlay and pushes updates over Server-Sent
+Events. Standard library only, to keep the PyInstaller binary small.
 """
 
 from __future__ import annotations
@@ -39,7 +37,7 @@ def make_handler(log):
         protocol_version = "HTTP/1.1"
 
         def log_message(self, *args):
-            pass  # pas de bruit dans la console du streamer
+            pass  # keep the streamer's console quiet
 
         def _send(self, body: bytes, content_type: str, status: int = 200):
             self.send_response(status)
@@ -66,7 +64,7 @@ def make_handler(log):
             rel = "index.html" if path == "/" else path.lstrip("/")
             target = (OVERLAY_DIR / rel).resolve()
             if not str(target).startswith(str(OVERLAY_DIR.resolve())) or not target.is_file():
-                return self._send(b"Page introuvable.", "text/plain; charset=utf-8", 404)
+                return self._send(b"Not found.", "text/plain; charset=utf-8", 404)
             mime = _MIME.get(target.suffix, "application/octet-stream")
             return self._send(target.read_bytes(), mime)
 
@@ -102,7 +100,7 @@ def make_handler(log):
 
 
 class QuietServer(ThreadingHTTPServer):
-    """Un navigateur qui ferme un flux SSE n'est pas une erreur a afficher."""
+    """A browser closing an SSE stream is not an error worth printing."""
 
     def handle_error(self, request, client_address):
         import sys
@@ -114,7 +112,7 @@ class QuietServer(ThreadingHTTPServer):
 
 
 def serve(log, host: str = "127.0.0.1", port: int = 4747) -> QuietServer:
-    """Demarre le serveur dans un thread daemon et le retourne."""
+    """Start the server in a daemon thread and return it."""
     httpd = QuietServer((host, port), make_handler(log))
     httpd.daemon_threads = True
     threading.Thread(target=httpd.serve_forever, daemon=True).start()

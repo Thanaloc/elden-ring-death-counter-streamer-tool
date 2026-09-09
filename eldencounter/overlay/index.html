@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Compteur de morts</title>
+<title>Death counter</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,500;1,500&display=swap" rel="stylesheet">
@@ -30,7 +30,7 @@
     padding: 24px;
   }
 
-  /* La reglette verticale groupe les trois lignes sans boite ni cadre. */
+  /* The vertical rule groups the three lines without a box or frame. */
   .readout {
     position: relative;
     padding-left: 22px;
@@ -85,7 +85,7 @@
     opacity: .68;
   }
 
-  /* Un seul moment de mouvement : la mort qui vient d'etre comptee. */
+  /* One moment of motion only: the death just counted. */
   @keyframes toll {
     0%   { color: var(--blood); transform: translateY(-3px); }
     35%  { color: var(--blood); transform: translateY(0); }
@@ -123,17 +123,17 @@
   const tallyEl = document.getElementById("tally");
   const lifeEl = document.getElementById("lifetime");
 
-  const fr = new Intl.NumberFormat("fr-FR");
+  const numbers = new Intl.NumberFormat("en-US");
   let previousTally = null;
 
   function plural(n) {
-    return n > 1 ? "morts au total" : "mort au total";
+    return n === 1 ? "death total" : "deaths total";
   }
 
   function render(state) {
     bossEl.textContent = state.boss_name || "";
-    tallyEl.textContent = fr.format(state.boss_count);
-    lifeEl.textContent = fr.format(state.total) + " " + plural(state.total);
+    tallyEl.textContent = numbers.format(state.boss_count);
+    lifeEl.textContent = numbers.format(state.total) + " " + plural(state.total);
 
     const counted = state.event === "death" ||
       (previousTally !== null && state.boss_count > previousTally);
@@ -147,7 +147,7 @@
   function flash(name) {
     readout.classList.remove(name);
     tallyEl.classList.remove("tolling");
-    void readout.offsetWidth;            // force le redemarrage de l'animation
+    void readout.offsetWidth;            // force the animation to restart
     readout.classList.add(name);
     if (name === "tolling") tallyEl.classList.add("tolling");
     setTimeout(() => {
