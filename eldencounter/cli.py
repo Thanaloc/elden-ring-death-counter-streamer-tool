@@ -263,7 +263,11 @@ def cmd_langues(args) -> int:
         return 1
 
     langs = available_languages()
-    print(f"Dossier de langues : {tessdata_dir()}")
+    folder = tessdata_dir()
+    print(f"Dossier de langues : {folder}")
+    if folder is not None and not str(folder).isascii():
+        print("  ATTENTION : ce chemin contient un accent, Tesseract ne "
+              "saura pas le lire.")
     print(f"Langues disponibles : {', '.join(langs) or 'aucune'}")
 
     utiles = [l for l in langs if l != "osd"]

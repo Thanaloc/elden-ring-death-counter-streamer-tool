@@ -22,6 +22,7 @@ import json
 import os
 import shutil
 import sys
+import tempfile
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
@@ -88,21 +89,75 @@ def _locate_binary() -> Path | None:
     return None
 
 
+def _is_ascii(path: Path) -> bool:
+    return str(path).isascii()
+
+
+def _short_path(path: Path) -> Path:
+    """
+    Forme courte 8.3 d'un chemin Windows, quand elle existe.
+
+    C:\\Users\\Raphael Seguin devient C:\\Users\\RAPHAL~1, qui a le bon gout
+    d'etre en ASCII pur.
+    """
+    if os.name != "nt":
+        return path
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        get_short = ctypes.windll.kernel32.GetShortPathNameW
+        get_short.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+        get_short.restype = wintypes.DWORD
+
+        buffer = ctypes.create_unicode_buffer(1024)
+        length = get_short(str(path), buffer, 1024)
+        if length and length < 1024 and buffer.value:
+            return Path(buffer.value)
+    except Exception:
+        pass
+    return path
+
+
 def user_tessdata() -> Path:
     """
-    Dossier de langues persistant, dans le repertoire de l'outil.
+    Dossier de langues persistant, garanti sans caractere accentue.
 
     Celui embarque dans l'executable vit dans un dossier temporaire recree
-    a chaque lancement : impossible d'y deposer quoi que ce soit. On recopie
-    donc son contenu une fois dans un emplacement stable, ou l'utilisateur
-    peut ajouter les langues qui lui manquent.
+    a chaque lancement : impossible d'y deposer quoi que ce soit. Mais le
+    dossier personnel ne convient pas non plus des que le nom d'utilisateur
+    contient un accent : Tesseract echoue alors sur "Illegal byte sequence",
+    car il ouvre ses fichiers par une API qui ne gere pas l'Unicode.
+
+    On essaie donc, dans l'ordre : le dossier personnel s'il est en ASCII,
+    sa forme courte 8.3, puis un emplacement systeme neutre.
     """
-    return Path.home() / ".elden-death-counter" / "tessdata"
+    home = Path.home() / ".elden-death-counter" / "tessdata"
+    if _is_ascii(home):
+        return home
+
+    home.mkdir(parents=True, exist_ok=True)
+    short = _short_path(home)
+    if _is_ascii(short):
+        return short
+
+    base = os.environ.get("PROGRAMDATA") or os.environ.get("ALLUSERSPROFILE")
+    if base and Path(base).is_dir():
+        neutral = Path(base) / "elden-death-counter" / "tessdata"
+        if _is_ascii(neutral):
+            return neutral
+
+    return Path(tempfile.gettempdir()) / "elden-counter-tessdata"
 
 
 def _prepare_tessdata(binary: Path) -> Path | None:
     bundled = binary.parent / "tessdata"
     if _bundle_root() is None:
+        # Installation classique : on ne recopie rien, sauf si le chemin
+        # est accentue et donc illisible pour Tesseract.
+        if bundled.is_dir() and not _is_ascii(bundled):
+            short = _short_path(bundled)
+            return short if _is_ascii(short) else bundled
         return bundled if bundled.is_dir() else None
 
     target = user_tessdata()
@@ -163,9 +218,22 @@ def require_tesseract() -> None:
         pytesseract.pytesseract.tesseract_cmd = str(binary)
         tessdata = _prepare_tessdata(binary)
         if tessdata is not None:
+            if not _is_ascii(tessdata):
+                tessdata = _short_path(tessdata)
             # setdefault ne suffit pas : une variable heritee du systeme
             # pointerait vers une autre installation que celle retenue.
             os.environ["TESSDATA_PREFIX"] = str(tessdata)
+
+    prefix = os.environ.get("TESSDATA_PREFIX", "")
+    if prefix and not prefix.isascii():
+        raise OcrUnavailable(
+            "Le dossier des donnees de langue contient un caractere "
+            f"accentue :\n  {prefix}\n\n"
+            "Tesseract ne sait pas ouvrir un tel chemin. Definis "
+            "TESSDATA_PREFIX vers un dossier sans accent, par exemple "
+            "C:\\ProgramData\\elden-death-counter\\tessdata, et copies-y "
+            "les fichiers .traineddata."
+        )
 
     try:
         pytesseract.get_tesseract_version()
