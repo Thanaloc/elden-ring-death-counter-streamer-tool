@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "elden-death-counter"
-version = "0.8.3"
+version = "0.9.0"
 description = "Compteur de morts Elden Ring pour OBS et Streamlabs, avec detection automatique de l'ecran de mort."
 readme = "README.md"
 requires-python = ">=3.10"

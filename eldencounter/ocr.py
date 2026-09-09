@@ -215,16 +215,29 @@ def variants(crop: np.ndarray) -> list:
     return [255 - big, local, binary]
 
 
-def read_text(crop: np.ndarray, lang: str) -> list:
-    """Textes lus, un par preparation."""
+def read_text_verbose(crop: np.ndarray, lang: str):
+    """
+    Textes lus, un par preparation, et les erreurs rencontrees.
+
+    Distinguer "rien a lire" de "le moteur a echoue" est indispensable :
+    les deux donnent une chaine vide, mais appellent des corrections
+    completement differentes.
+    """
     config = f"{TESSERACT_CONFIG} -l {lang}"
-    out = []
+    texts, errors = [], []
     for image in variants(crop):
         try:
-            out.append(normalise(pytesseract.image_to_string(image, config=config)))
-        except Exception:
-            out.append("")
-    return out
+            texts.append(normalise(pytesseract.image_to_string(image, config=config)))
+        except Exception as exc:
+            texts.append("")
+            message = str(exc).strip()
+            if message and message not in errors:
+                errors.append(message)
+    return texts, errors
+
+
+def read_text(crop: np.ndarray, lang: str) -> list:
+    return read_text_verbose(crop, lang)[0]
 
 
 def locate_text(band: np.ndarray, lang: str):
@@ -243,7 +256,9 @@ def locate_text(band: np.ndarray, lang: str):
             data = pytesseract.image_to_data(
                 image, config=f"--psm 6 -l {lang}",
                 output_type=pytesseract.Output.DICT)
-        except Exception:
+        except Exception as exc:
+            print(f"  (reperage automatique indisponible : "
+                  f"{str(exc).strip()[:120]})")
             continue
 
         words = [i for i in range(len(data["text"]))

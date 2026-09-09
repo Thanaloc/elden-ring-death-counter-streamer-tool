@@ -9,11 +9,13 @@ import time
 import cv2
 import mss
 
+from . import __version__
 from .capture import crop_band, grab, imwrite_png, wait_for_death
 from .counter import DEFAULT_STATE_PATH, DeathLog
 from .ocr import (Detection, DetectorConfig, OcrUnavailable, TextDetector,
                   available_languages, locate_text,
-                  missing_language_help, read_text, require_tesseract)
+                  missing_language_help, read_text_verbose,
+                  require_tesseract, tessdata_dir)
 from .server import serve
 from .setup_ui import confirm_zone
 
@@ -29,6 +31,8 @@ CHECKS_PER_SECOND = 2
 # ---------------------------------------------------------------- setup
 
 def cmd_setup(args) -> int:
+    print(f"elden-counter {__version__}\n")
+
     try:
         require_tesseract()
     except OcrUnavailable as exc:
@@ -73,11 +77,29 @@ def cmd_setup(args) -> int:
             return 1
 
     x0, y0, x1, y1 = zone
-    readings = [t for t in read_text(band[y0:y1, x0:x1], args.lang) if len(t) >= 4]
+    crop = band[y0:y1, x0:x1]
+
+    # On garde l'image exacte soumise a l'OCR : c'est la premiere chose a
+    # regarder quand la lecture echoue.
+    crop_path = DEFAULT_STATE_PATH.parent / "zone-lue.png"
+    imwrite_png(crop_path, crop)
+
+    texts, errors = read_text_verbose(crop, args.lang)
+    readings = [t for t in texts if len(t) >= 4]
+
     if not readings:
-        print("Aucun texte lisible dans cette zone.")
-        print("Refais le setup en appuyant sur F8 quand le texte est bien net,")
-        print("et en cadrant au plus serre sur les lettres.")
+        if errors:
+            print("Tesseract a echoue :")
+            for message in errors:
+                print(f"  {message[:200]}")
+            print(f"\nDossier de langues utilise : {tessdata_dir()}")
+            print(f"Langues visibles : {', '.join(available_languages()) or 'aucune'}")
+        else:
+            print("Aucun texte lisible dans cette zone.")
+            print(f"Ce qui a ete lu : {texts}")
+            print(f"\nRegarde l'image reellement analysee : {crop_path}")
+            print("Si le texte y est net, essaie un cadre un peu plus large,")
+            print("ou refais le setup avec le texte pleinement affiche.")
         return 1
 
     # Le meme texte lu par plusieurs preparations differentes est le plus sur.
@@ -100,6 +122,7 @@ def cmd_setup(args) -> int:
 # ------------------------------------------------------------------ run
 
 def cmd_run(args) -> int:
+    print(f"elden-counter {__version__}\n")
     detection = Detection.load(DETECTION_PATH)
     manual = args.manual or detection is None
     if manual and not args.manual:
@@ -185,6 +208,7 @@ def _bind_hotkeys(log: DeathLog) -> None:
 # ------------------------------------------------------------- diagnostic
 
 def cmd_diagnose(args) -> int:
+    print(f"elden-counter {__version__}\n")
     detection = Detection.load(DETECTION_PATH)
     if detection is None:
         print(f"Aucun reglage a l'emplacement attendu : {DETECTION_PATH}")
@@ -224,6 +248,32 @@ def cmd_diagnose(args) -> int:
 
 # ---------------------------------------------------------------- divers
 
+def cmd_langues(args) -> int:
+    """
+    Verifie que le moteur est utilisable et liste les langues disponibles.
+
+    Sert autant a l'utilisateur qu'a la chaine de construction : si le
+    binaire publie n'embarque pas les langues, autant s'en apercevoir
+    pendant le build plutot que chez le joueur.
+    """
+    try:
+        require_tesseract()
+    except OcrUnavailable as exc:
+        print(exc)
+        return 1
+
+    langs = available_languages()
+    print(f"Dossier de langues : {tessdata_dir()}")
+    print(f"Langues disponibles : {', '.join(langs) or 'aucune'}")
+
+    utiles = [l for l in langs if l != "osd"]
+    if len(utiles) < 2:
+        print("\nSeul l'anglais est disponible. Pour ajouter une langue :")
+        print(missing_language_help("fra"))
+        return 1
+    return 0
+
+
 def cmd_boss(args) -> int:
     log = DeathLog()
     log.set_boss(args.name, keep_count=args.keep)
@@ -258,6 +308,8 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="elden-counter",
         description="Compteur de morts Elden Ring pour OBS et Streamlabs.")
+    parser.add_argument("--version", action="version",
+                        version=f"elden-counter {__version__}")
 
     screen = argparse.ArgumentParser(add_help=False)
     screen.add_argument("--monitor", type=int, default=1,
@@ -290,6 +342,9 @@ def main(argv=None) -> int:
     p.add_argument("--seconds", type=int, default=25)
     p.add_argument("--similarity", type=float, default=0.60)
     p.set_defaults(func=cmd_diagnose)
+
+    p = sub.add_parser("langues", help="lister les langues reconnues")
+    p.set_defaults(func=cmd_langues)
 
     p = sub.add_parser("boss", help="changer le boss affiche")
     p.add_argument("name")

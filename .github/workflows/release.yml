@@ -12,24 +12,70 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - run: pip install . pyinstaller
-      - name: Recuperer Tesseract
+
+      - name: Preparer Tesseract et ses langues
+        shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
+          $ProgressPreference = "SilentlyContinue"
+
           choco install tesseract --no-progress -y
-          mkdir tesseract
-          copy "C:\\Program Files\\Tesseract-OCR\\tesseract.exe" tesseract\\
-          copy "C:\\Program Files\\Tesseract-OCR\\*.dll" tesseract\\
-          xcopy /E /I "C:\\Program Files\\Tesseract-OCR\\tessdata" tesseract\\tessdata
-      - run: >
-          pyinstaller --onefile --name elden-counter
-          --add-data "eldencounter/overlay;eldencounter/overlay"
-          --add-data "tesseract;tesseract"
-          --collect-submodules keyboard
-          --collect-all cv2
-          entrypoint.py
+
+          $src = "C:\Program Files\Tesseract-OCR"
+          if (-not (Test-Path "$src\tesseract.exe")) {
+            throw "Tesseract introuvable dans $src apres installation"
+          }
+
+          New-Item -ItemType Directory -Force -Path "tesseract\tessdata" | Out-Null
+          Copy-Item "$src\tesseract.exe" "tesseract\"
+          Copy-Item "$src\*.dll" "tesseract\"
+          Copy-Item "$src\tessdata\*.traineddata" "tesseract\tessdata\"
+
+          # Chocolatey ne livre que l'anglais. Sans ces fichiers, l'outil est
+          # inutilisable pour un joueur qui ne joue pas en anglais : un echec
+          # ici doit casser le build, pas passer inapercu.
+          foreach ($lang in @("fra", "deu", "spa", "ita", "por", "rus")) {
+            $out = "tesseract\tessdata\$lang.traineddata"
+            $url = "https://github.com/tesseract-ocr/tessdata_fast/raw/main/$lang.traineddata"
+            Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing
+            $size = (Get-Item $out).Length
+            if ($size -lt 100000) {
+              throw "$lang.traineddata fait $size octets : telechargement invalide"
+            }
+            Write-Host "$lang : $size octets"
+          }
+
+          Write-Host "`nContenu de tesseract\tessdata :"
+          Get-ChildItem "tesseract\tessdata" | ForEach-Object {
+            Write-Host ("  {0}  {1} octets" -f $_.Name, $_.Length)
+          }
+
+      - name: Construire l'executable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          pyinstaller --onefile --name elden-counter `
+            --add-data "eldencounter/overlay;eldencounter/overlay" `
+            --add-data "tesseract;tesseract" `
+            --collect-submodules keyboard `
+            --collect-all cv2 `
+            entrypoint.py
+
+      - name: Verifier l'executable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          .\dist\elden-counter.exe --version
+          # Le bundle doit contenir les langues : sinon la Release est cassee
+          # et il vaut mieux le savoir ici que chez l'utilisateur.
+          .\dist\elden-counter.exe langues
+
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/elden-counter.exe
