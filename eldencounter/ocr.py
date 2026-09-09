@@ -19,6 +19,9 @@ from __future__ import annotations
 
 import difflib
 import json
+import os
+import shutil
+import sys
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,26 +37,88 @@ except ImportError:                                   # pragma: no cover
 TESSERACT_CONFIG = "--psm 7"
 UPSCALE = 3
 
+# Emplacements ou chercher le moteur, dans l'ordre : celui embarque dans
+# l'executable, puis les installations classiques. pytesseract ne regarde
+# que le PATH par defaut, ou Tesseract n'est presque jamais.
+BUNDLED_SUBDIR = "tesseract"
+WINDOWS_PATHS = (
+    r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+    r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+)
+UNIX_PATHS = ("/usr/bin/tesseract", "/usr/local/bin/tesseract",
+              "/opt/homebrew/bin/tesseract")
+
 
 class OcrUnavailable(RuntimeError):
     pass
 
 
+def _bundle_root() -> Path | None:
+    """Dossier ou PyInstaller a decompresse les ressources, s'il y en a un."""
+    base = getattr(sys, "_MEIPASS", None)
+    return Path(base) if base else None
+
+
+def _candidate_binaries():
+    root = _bundle_root()
+    if root is not None:
+        folder = root / BUNDLED_SUBDIR
+        yield folder / "tesseract.exe"
+        yield folder / "tesseract"
+    for path in (WINDOWS_PATHS if os.name == "nt" else UNIX_PATHS):
+        yield Path(path)
+
+
+def _locate_binary() -> Path | None:
+    found = shutil.which("tesseract")
+    if found:
+        return Path(found)
+    for candidate in _candidate_binaries():
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def require_tesseract() -> None:
+    """
+    S'assure que le moteur est utilisable, et le configure si besoin.
+
+    L'executable embarque sa propre copie de Tesseract ; encore faut-il
+    indiquer a pytesseract ou elle se trouve, et ou sont les donnees de
+    langue, sans quoi il ne regarde que le PATH.
+    """
     if pytesseract is None:
         raise OcrUnavailable(
             "Le module pytesseract n'est pas installe.\n"
             "pip install pytesseract, et installe le moteur Tesseract."
         )
+
+    binary = _locate_binary()
+    if binary is not None:
+        pytesseract.pytesseract.tesseract_cmd = str(binary)
+        tessdata = binary.parent / "tessdata"
+        if tessdata.is_dir():
+            os.environ.setdefault("TESSDATA_PREFIX", str(tessdata))
+
     try:
         pytesseract.get_tesseract_version()
     except Exception as exc:
+        tried = "\n".join(f"  {c}" for c in _candidate_binaries())
         raise OcrUnavailable(
             "Tesseract est introuvable sur ce systeme.\n"
             "Windows : https://github.com/UB-Mannheim/tesseract/wiki\n"
+            "  (coche bien ta langue de jeu pendant l'installation)\n"
             "Linux : apt install tesseract-ocr tesseract-ocr-fra\n"
-            f"({exc})"
+            f"\nEmplacements essayes :\n{tried}\n"
+            f"\n({exc})"
         ) from exc
+
+
+def available_languages() -> list:
+    try:
+        return sorted(pytesseract.get_languages(config=""))
+    except Exception:
+        return []
 
 
 def normalise(text: str) -> str:

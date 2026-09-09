@@ -12,7 +12,8 @@ import mss
 from .capture import crop_band, grab, imwrite_png, wait_for_death
 from .counter import DEFAULT_STATE_PATH, DeathLog
 from .ocr import (Detection, DetectorConfig, OcrUnavailable, TextDetector,
-                  locate_text, read_text, require_tesseract)
+                  available_languages, locate_text, read_text,
+                  require_tesseract)
 from .server import serve
 from .setup_ui import confirm_zone
 
@@ -32,6 +33,13 @@ def cmd_setup(args) -> int:
         require_tesseract()
     except OcrUnavailable as exc:
         print(exc)
+        return 1
+
+    langs = available_languages()
+    if langs and args.lang not in langs:
+        print(f"La langue '{args.lang}' n'est pas installee.")
+        print(f"Disponibles : {', '.join(langs)}")
+        print("Relance avec --lang suivi d'un de ces codes.")
         return 1
 
     with mss.mss() as sct:

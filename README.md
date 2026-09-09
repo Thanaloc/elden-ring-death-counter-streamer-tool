@@ -19,9 +19,15 @@ hook dans le processus du jeu : rien qui puisse intéresser l'anti-triche.
 pip install elden-death-counter
 ```
 
-Il faut aussi le moteur Tesseract, avec les données de ta langue de jeu.
-Windows : l'installeur de [UB-Mannheim](https://github.com/UB-Mannheim/tesseract/wiki),
+L'exécutable embarque son propre moteur Tesseract avec le français,
+l'anglais, l'allemand, l'espagnol, l'italien, le portugais et le russe : rien
+à installer.
+
+Pour l'installation par pip, il faut le moteur séparément. Windows :
+l'installeur de [UB-Mannheim](https://github.com/UB-Mannheim/tesseract/wiki),
 en cochant la langue voulue. Linux : `apt install tesseract-ocr tesseract-ocr-fra`.
+Il est cherché dans le PATH puis aux emplacements d'installation habituels, il
+n'est donc pas nécessaire de l'ajouter au PATH à la main.
 
 ## Prise en main
 
