@@ -1,116 +1,131 @@
 # Elden Death Counter
 
-Compteur de morts automatique pour Elden Ring, à afficher en direct dans OBS
-ou Streamlabs. Deux compteurs à l'écran : le total depuis le début, et le
-nombre de morts sur le boss en cours, que tu remets à zéro d'une touche quand
-tu le bats.
+An automatic death counter for Elden Ring, displayed live in OBS or
+Streamlabs. Two numbers on screen: your all-time total, and your deaths on
+the current boss, which you reset with a keypress once you finally beat it.
 
-La détection lit le texte affiché à l'écran. Aucune lecture mémoire, aucun
-hook dans le processus du jeu : rien qui puisse intéresser l'anti-triche.
+Detection works by reading the text on screen. No memory reading, no hooks
+into the game process, nothing that could interest anti-cheat.
 
-## Installation
+## Install
 
-**Sans Python.** Télécharge `elden-counter.exe` dans les
-[Releases](../../releases).
+**Without Python.** Download `elden-counter.exe` from
+[Releases](../../releases). It ships with its own Tesseract engine and
+language data for English, French, German, Spanish, Italian, Portuguese and
+Russian, so there is nothing else to install.
 
-**Avec Python 3.10 ou plus récent :**
+**With Python 3.10 or newer:**
 
 ```
 pip install elden-death-counter
 ```
 
-L'exécutable embarque son propre moteur Tesseract avec le français,
-l'anglais, l'allemand, l'espagnol, l'italien, le portugais et le russe : rien
-à installer.
+This route needs the Tesseract engine separately. On Windows, use the
+[UB-Mannheim installer](https://github.com/UB-Mannheim/tesseract/wiki) and
+tick your game's language. On Linux, `apt install tesseract-ocr
+tesseract-ocr-eng`. The engine is looked up on PATH first, then in the usual
+install locations, so you do not need to edit PATH yourself.
 
-Pour l'installation par pip, il faut le moteur séparément. Windows :
-l'installeur de [UB-Mannheim](https://github.com/UB-Mannheim/tesseract/wiki),
-en cochant la langue voulue. Linux : `apt install tesseract-ocr tesseract-ocr-fra`.
-Il est cherché dans le PATH puis aux emplacements d'installation habituels, il
-n'est donc pas nécessaire de l'ajouter au PATH à la main.
-
-Les données de langue sont recopiées au premier lancement dans
-`~/.elden-death-counter/tessdata`. Pour ajouter une langue absente, dépose le
-fichier `.traineddata` correspondant dans ce dossier : il est conservé d'un
-lancement à l'autre, contrairement à celui embarqué dans l'exécutable.
-
-## Prise en main
+## Getting started
 
 ```
 elden-counter setup
 elden-counter run --boss "Malenia"
 ```
 
-Le setup te demande de mourir une fois et d'appuyer sur F8 pendant que le
-texte est affiché. Il repère tout seul la ligne de texte, ouvre une page dans
-ton navigateur pour que tu confirmes le cadre d'un clic, puis lit le texte et
-le mémorise. C'est tout ce dont il a besoin.
+Setup asks you to die once and press F8 while the death text is on screen.
+It finds the line of text on its own, opens a page in your browser so you
+can confirm the box with one click, then reads the text and remembers it.
+That is all it needs.
 
-Si ton jeu n'est pas en français, précise la langue : `--lang eng`,
-`--lang deu`, `--lang jpn`. L'outil ne connaît aucun texte à l'avance, il
-apprend le tien.
+If your game is not in English, pass the language: `--lang fra`, `--lang
+deu`, `--lang jpn`. The tool has no text hardcoded anywhere - it learns
+yours.
 
-Ajoute ensuite dans OBS une **source navigateur** sur `http://127.0.0.1:4747`,
-en 600×300. Le fond est transparent.
+Then add a **browser source** in OBS pointing at `http://127.0.0.1:4747`,
+sized 600x300. The background is already transparent. Untick "Shutdown
+source when not visible", otherwise the counter stops updating whenever you
+switch scenes.
 
-## Raccourcis pendant le stream
+## Hotkeys while streaming
 
-| Touche | Effet |
+| Key | Effect |
 |---|---|
-| F9 | Ajouter une mort aux deux compteurs |
-| F10 | En retirer une |
-| F11 | Remettre le compteur du boss à zéro, le total reste intact |
-| F12 | Boss vaincu : le score part dans l'historique et le compteur repart de zéro |
+| F9 | Add a death to both counters |
+| F10 | Remove one |
+| F11 | Reset the boss counter, leaving the total untouched |
+| F12 | Boss defeated: the score goes to your history and the counter restarts at zero |
 
-## Autres commandes
+## Commands
 
 ```
-elden-counter diagnose         # voir ce que lit le détecteur, en direct
-elden-counter boss "Radagon"   # changer le boss affiché
-elden-counter history          # revoir tes scores sur les boss battus
-elden-counter reset            # remettre le boss à zéro
-elden-counter reset --all      # tout effacer, historique compris
-elden-counter run --manual     # comptage aux raccourcis uniquement
+elden-counter setup            # learn the death text
+elden-counter run              # detection and overlay
+elden-counter run --manual     # count only with hotkeys
+elden-counter diagnose         # watch what the detector reads, live
+elden-counter langues          # list the languages available
+elden-counter boss "Radagon"   # change the boss on screen
+elden-counter history          # past bosses and what they cost you
+elden-counter reset            # boss counter back to zero
+elden-counter reset --all      # wipe everything, history included
+elden-counter --version
 ```
 
-## Pourquoi la lecture de texte
+Add `--monitor 2` to `setup`, `run` and `diagnose` if the game is not on
+your primary display.
 
-La première version corrélait la forme d'une empreinte apprise sur plusieurs
-morts. Ça marchait, mais elle ne comprenait pas ce qu'elle regardait : le bord
-du voile sombre, ou la boîte de dialogue de la carte, lui ressemblaient assez
-pour la déclencher. Il a fallu empiler les garde-fous — constance entre morts,
-exclusion de l'interface, filtrage par forme, contre-exemples, signatures
-multiples — et il restait des angles morts.
+## Why read the text
 
-Lire le texte est spécifique au sens. Un assombrissement ne lit rien, la carte
-lit autre chose. Sur les mêmes captures réelles qui mettaient la corrélation en
-échec : 7 morts sur 12 lues, **zéro faux positif sur 37 images**, menus et
-carte compris. La pire vraie lecture est à 0,85 de similitude, la pire fausse
-à 0,40.
+The first version matched the shape of a fingerprint learned from several
+deaths. It worked, but it had no idea what it was looking at: the edge of
+the dark veil, or the map's fast-travel dialog, resembled it closely enough
+to trigger a count. Guardrails piled up - consistency across deaths, HUD
+exclusion, shape filtering, counter-examples, multiple fingerprints - and
+blind spots remained.
 
-Les morts non lues sont des images dégradées — fondu, texte délavé sur une
-scène très claire. En fonctionnement, l'écran est analysé deux fois par
-seconde pendant les quelques secondes d'affichage : il suffit qu'une seule
-lecture passe.
+Reading the text is specific to meaning. A darkened band reads as nothing.
+The map reads as something else. Measured on the same real captures that
+defeated the shape matcher: 7 deaths out of 12 read, **zero false positives
+across 37 images**, menus and map included. The worst true reading scored
+0.85 similarity, the worst false one 0.40.
 
-## Réglages
+The deaths that go unread are degraded frames, caught mid-fade or washed out
+against a very bright scene. In practice the screen is checked twice a
+second for the several seconds the text stays up, so a single successful
+read is enough.
 
-`--similarity` ajuste le seuil de ressemblance, 0,60 par défaut. Monte-le si
-un autre écran déclenche à tort, descends-le si des morts passent à travers.
+Comparison is fuzzy rather than exact, which matters more than it sounds.
+A real death in the Consecrated Snowfields once read as `VOUSAVEZRER`
+instead of `VOUSAVEZPERI`: three wrong characters, still 0.87 similarity,
+comfortably counted.
 
-`elden-counter diagnose` affiche en direct ce qui est lu, ligne par ligne.
-C'est le premier endroit où regarder quand quelque chose cloche.
+## Tuning
 
-Sur un écran secondaire, précise `--monitor 2`.
+`--similarity` sets the match threshold, 0.60 by default. Raise it if
+another screen triggers a count, lower it if deaths slip through. There is
+room on both sides.
 
-## Ce qui peut poser problème
+`elden-counter diagnose` prints every read as it happens. It is the first
+place to look when something misbehaves.
 
-Sous Windows, les raccourcis clavier globaux demandent souvent de lancer le
-terminal en administrateur.
+## Known rough edges
 
-Sur console via carte d'acquisition, fais le setup avec la fenêtre de preview
-dans la position exacte où elle restera pendant le stream.
+Language data is copied on first run into a folder next to your settings.
+`elden-counter langues` prints the exact path. To add a language, drop the
+matching `.traineddata` file from
+[tessdata_fast](https://github.com/tesseract-ocr/tessdata_fast) in there;
+it persists between runs, unlike the copy bundled inside the executable.
 
-## Licence
+Tesseract cannot open paths containing accented characters. If your Windows
+username has one, the tool picks a neutral folder automatically, and tells
+you plainly if it cannot.
+
+On Windows, global hotkeys sometimes need the terminal running as
+administrator.
+
+On console through a capture card, run setup with the preview window in the
+exact position it will keep during the stream.
+
+## License
 
 MIT.

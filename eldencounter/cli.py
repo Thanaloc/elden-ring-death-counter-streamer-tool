@@ -151,7 +151,7 @@ def cmd_run(args) -> int:
     _bind_hotkeys(log)
 
     snap = log.snapshot()
-    print(f"Boss : {snap['boss_name'] or 'aucun'} — {snap['boss_count']} morts "
+    print(f"Boss : {snap['boss_name'] or 'aucun'} - {snap['boss_count']} morts "
           f"| total : {snap['total']}")
     if detector is not None:
         print(f"Recherche de : {detector.detection.reference}")
@@ -169,7 +169,7 @@ def cmd_run(args) -> int:
                     started = time.time()
                     if detector.update(crop_band(grab(sct, monitor)), started):
                         s = log.record_death()
-                        print(f"Mort comptee — {s['boss_count']} sur ce boss, "
+                        print(f"Mort comptee - {s['boss_count']} sur ce boss, "
                               f"{s['total']} au total")
                     elif args.debug:
                         print(f"{detector.last_score:.2f}  "
@@ -282,7 +282,7 @@ def cmd_boss(args) -> int:
     log = DeathLog()
     log.set_boss(args.name, keep_count=args.keep)
     s = log.snapshot()
-    print(f"Boss courant : {s['boss_name']} — {s['boss_count']} morts")
+    print(f"Boss courant : {s['boss_name']} - {s['boss_count']} morts")
     return 0
 
 
