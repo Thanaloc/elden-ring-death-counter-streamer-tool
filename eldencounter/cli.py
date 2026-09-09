@@ -12,8 +12,8 @@ import mss
 from .capture import crop_band, grab, imwrite_png, wait_for_death
 from .counter import DEFAULT_STATE_PATH, DeathLog
 from .ocr import (Detection, DetectorConfig, OcrUnavailable, TextDetector,
-                  available_languages, locate_text, read_text,
-                  require_tesseract)
+                  available_languages, locate_text,
+                  missing_language_help, read_text, require_tesseract)
 from .server import serve
 from .setup_ui import confirm_zone
 
@@ -38,8 +38,9 @@ def cmd_setup(args) -> int:
     langs = available_languages()
     if langs and args.lang not in langs:
         print(f"La langue '{args.lang}' n'est pas installee.")
-        print(f"Disponibles : {', '.join(langs)}")
-        print("Relance avec --lang suivi d'un de ces codes.")
+        print(f"Disponibles : {', '.join(langs)}\n")
+        print(missing_language_help(args.lang))
+        print(f"\nOu relance avec une langue disponible : --lang {langs[0]}")
         return 1
 
     with mss.mss() as sct:

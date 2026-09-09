@@ -60,23 +60,57 @@ def _bundle_root() -> Path | None:
 
 
 def _candidate_binaries():
+    """
+    La copie embarquee passe avant celle du systeme.
+
+    Une installation faite a la main contient souvent le seul anglais ; la
+    copie livree avec l'executable, elle, embarque les langues courantes.
+    Chercher le PATH en premier reviendrait a preferer la moins fournie.
+    """
     root = _bundle_root()
     if root is not None:
         folder = root / BUNDLED_SUBDIR
         yield folder / "tesseract.exe"
         yield folder / "tesseract"
+
+    found = shutil.which("tesseract")
+    if found:
+        yield Path(found)
+
     for path in (WINDOWS_PATHS if os.name == "nt" else UNIX_PATHS):
         yield Path(path)
 
 
 def _locate_binary() -> Path | None:
-    found = shutil.which("tesseract")
-    if found:
-        return Path(found)
     for candidate in _candidate_binaries():
         if candidate.is_file():
             return candidate
     return None
+
+
+def tessdata_dir() -> Path | None:
+    binary = _locate_binary()
+    if binary is None:
+        return None
+    local = binary.parent / "tessdata"
+    if local.is_dir():
+        return local
+    prefix = os.environ.get("TESSDATA_PREFIX")
+    return Path(prefix) if prefix and Path(prefix).is_dir() else None
+
+
+def missing_language_help(lang: str) -> str:
+    """Explique comment ajouter une langue absente, avec le chemin exact."""
+    folder = tessdata_dir()
+    lines = [
+        f"Telecharge {lang}.traineddata depuis :",
+        f"  https://github.com/tesseract-ocr/tessdata_fast/raw/main/{lang}.traineddata",
+    ]
+    if folder is not None:
+        lines.append(f"et depose-le dans :\n  {folder}")
+    else:
+        lines.append("et depose-le dans le dossier tessdata de ton installation.")
+    return "\n".join(lines)
 
 
 def require_tesseract() -> None:
@@ -98,7 +132,9 @@ def require_tesseract() -> None:
         pytesseract.pytesseract.tesseract_cmd = str(binary)
         tessdata = binary.parent / "tessdata"
         if tessdata.is_dir():
-            os.environ.setdefault("TESSDATA_PREFIX", str(tessdata))
+            # setdefault ne suffit pas : une variable heritee du systeme
+            # pointerait vers une autre installation que celle retenue.
+            os.environ["TESSDATA_PREFIX"] = str(tessdata)
 
     try:
         pytesseract.get_tesseract_version()
