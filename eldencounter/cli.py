@@ -131,7 +131,7 @@ def cmd_run(args) -> int:
 
     log = DeathLog()
     if args.boss:
-        log.set_boss(args.boss, keep_count=args.keep)
+        log.set_boss(args.boss, keep_count=args.keep, restart=args.restart)
 
     detector = None
     if not manual:
@@ -279,7 +279,8 @@ def cmd_languages(args) -> int:
 
 def cmd_boss(args) -> int:
     log = DeathLog()
-    log.set_boss(args.name, keep_count=args.keep, count=args.count)
+    log.set_boss(args.name, keep_count=args.keep, count=args.count,
+                 restart=args.restart)
     s = log.snapshot()
     print(f"Current boss: {s['boss_name']} - {s['boss_count']} deaths")
     return 0
@@ -341,7 +342,10 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("run", parents=[screen], help="detection and overlay")
     p.add_argument("--boss", default=None)
-    p.add_argument("--keep", action="store_true")
+    p.add_argument("--keep", action="store_true",
+                   help="keep the current count even when changing boss")
+    p.add_argument("--restart", action="store_true",
+                   help="start this boss back at zero")
     p.add_argument("--port", type=int, default=4747)
     p.add_argument("--similarity", type=float, default=0.60)
     p.add_argument("--confirm", type=int, default=1)
@@ -362,7 +366,9 @@ def main(argv=None) -> int:
     p = sub.add_parser("boss", help="change the boss on screen")
     p.add_argument("name")
     p.add_argument("--keep", action="store_true",
-                   help="keep the current boss count")
+                   help="keep the current count even when changing boss")
+    p.add_argument("--restart", action="store_true",
+                   help="start this boss back at zero")
     p.add_argument("--count", type=int, default=None,
                    help="set the boss count to this value")
     p.set_defaults(func=cmd_boss)

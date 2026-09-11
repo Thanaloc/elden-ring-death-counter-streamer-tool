@@ -4,7 +4,8 @@ Automatic death counter for Elden Ring, shown live in OBS or Streamlabs.
 Two numbers on screen: your all-time total, and your deaths on the current
 boss, which you reset once you beat it.
 
-Detection reads the text on screen.
+Detection reads the text on screen. No memory reading, no hooks into the
+game process.
 
 ## Install
 
@@ -31,6 +32,7 @@ Add a browser source in OBS at `http://127.0.0.1:4747`, 600x300. Untick
 "Shutdown source when not visible".
 
 Not playing in English? Pass `--lang fra`, `--lang deu`, `--lang jpn`.
+Nothing is hardcoded; it learns your text.
 
 ## Hotkeys
 
@@ -56,7 +58,7 @@ elden-counter reset            boss counter to zero
 elden-counter reset --all      wipe everything
 ```
 
-Add `--monitor _NUMBEROFMONITOR_` to `setup`, `run` and `diagnose` if the game is not on
+Add `--monitor 2` to `setup`, `run` and `diagnose` if the game is not on
 your primary display.
 
 ## FAQ
@@ -111,6 +113,12 @@ Untick "Shutdown source when not visible" on the browser source.
 Through a capture card, yes. Run setup with the preview window exactly where
 it will stay during the stream.
 
+**I stopped with Ctrl+C and came back. Is my progress kept?**
+Yes. Relaunching with `--boss "Malenia"` keeps that boss's count, because
+naming the boss you are already on is not the same as switching. Switching to
+a different boss starts at zero. To deliberately restart a boss you are
+already on, add `--restart`.
+
 **I already have deaths before installing this.**
 `elden-counter total 1481` sets the lifetime total. Your save file shows the
 real number in the stats screen. To start the boss counter partway through
@@ -119,9 +127,23 @@ too: `elden-counter boss "Malenia" --count 47`.
 **Can I move the counter or restyle it?**
 It is a plain HTML page in `eldencounter/overlay/`. Edit it.
 
-## Disclaimer    
+## How it works
 
-This counter is not fully precise and 100% fiable. Missed death could happen, don't hesitate to reach out so we can fix it. Otherwise, if one death sometimes doesn't bother you, don't hesitate to use F9.
+The text is read with Tesseract inside a zone you confirm once, then
+compared to the reference with fuzzy matching. Fuzzy matters: a real death in
+the Consecrated Snowfields read as `VOUSAVEZRER` instead of `VOUSAVEZPERI`
+and still scored 0.87.
+
+An earlier version matched the shape of a learned fingerprint instead. It had
+no idea what it was looking at, so the edge of the dark veil and the map's
+fast-travel dialog both triggered counts. Reading the text is specific to
+meaning: a darkened band reads as nothing, the map reads as something else.
+
+Measured on real captures: 7 deaths out of 12 read, zero false positives
+across 37 images including menus and map. Worst true reading 0.85, worst
+false one 0.40. Unread deaths are degraded frames, caught mid-fade or washed
+out. The screen is checked twice a second while the text is up, so one
+successful read is enough.
 
 ## License
 

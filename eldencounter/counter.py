@@ -93,12 +93,24 @@ class DeathLog:
             return self._commit()
 
     def set_boss(self, name: str, keep_count: bool = False,
-                 count: int | None = None) -> dict:
+                 count: int | None = None, restart: bool = False) -> dict:
+        """Set the boss on screen.
+
+        Naming the boss you are already on keeps its count: relaunching after
+        a break should not erase an evening of attempts. Switching to a
+        different boss starts at zero, which is what switching means.
+        """
         with self._lock:
+            same_boss = name == self._state["boss"]["name"]
             self._state["boss"]["name"] = name
+
             if count is not None:
                 self._state["boss"]["count"] = max(0, count)
-            elif not keep_count:
+            elif restart:
+                self._state["boss"]["count"] = 0
+            elif keep_count or same_boss:
+                pass
+            else:
                 self._state["boss"]["count"] = 0
             return self._commit()
 
