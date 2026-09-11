@@ -52,6 +52,7 @@ elden-counter run --manual     hotkeys only
 elden-counter diagnose         watch what it reads, live
 elden-counter languages        list available languages
 elden-counter boss "Radagon"   change the boss shown
+elden-counter total 1481       set the lifetime total
 elden-counter history          past bosses and their cost
 elden-counter reset            boss counter to zero
 elden-counter reset --all      wipe everything
@@ -111,6 +112,11 @@ Untick "Shutdown source when not visible" on the browser source.
 **Does it work on console?**
 Through a capture card, yes. Run setup with the preview window exactly where
 it will stay during the stream.
+
+**I already have deaths before installing this.**
+`elden-counter total 1481` sets the lifetime total. Your save file shows the
+real number in the stats screen. To start the boss counter partway through
+too: `elden-counter boss "Malenia" --count 47`.
 
 **Can I move the counter or restyle it?**
 It is a plain HTML page in `eldencounter/overlay/`. Edit it.

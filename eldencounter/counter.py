@@ -92,11 +92,24 @@ class DeathLog:
             self._state["boss"]["count"] = max(0, self._state["boss"]["count"] + delta)
             return self._commit()
 
-    def set_boss(self, name: str, keep_count: bool = False) -> dict:
+    def set_boss(self, name: str, keep_count: bool = False,
+                 count: int | None = None) -> dict:
         with self._lock:
             self._state["boss"]["name"] = name
-            if not keep_count:
+            if count is not None:
+                self._state["boss"]["count"] = max(0, count)
+            elif not keep_count:
                 self._state["boss"]["count"] = 0
+            return self._commit()
+
+    def set_total(self, value: int) -> dict:
+        """Set the lifetime total outright.
+
+        Needed when the tool arrives partway through a playthrough: the save
+        file already knows your death count, this counter does not.
+        """
+        with self._lock:
+            self._state["total"] = max(0, value)
             return self._commit()
 
     def reset_boss(self) -> dict:

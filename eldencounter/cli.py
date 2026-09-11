@@ -279,9 +279,19 @@ def cmd_languages(args) -> int:
 
 def cmd_boss(args) -> int:
     log = DeathLog()
-    log.set_boss(args.name, keep_count=args.keep)
+    log.set_boss(args.name, keep_count=args.keep, count=args.count)
     s = log.snapshot()
     print(f"Current boss: {s['boss_name']} - {s['boss_count']} deaths")
+    return 0
+
+
+def cmd_total(args) -> int:
+    log = DeathLog()
+    before = log.snapshot()["total"]
+    log.set_total(args.value)
+    s = log.snapshot()
+    print(f"Lifetime total: {before} -> {s['total']}")
+    print(f"Current boss unchanged: {s['boss_count']} deaths")
     return 0
 
 
@@ -351,8 +361,15 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("boss", help="change the boss on screen")
     p.add_argument("name")
-    p.add_argument("--keep", action="store_true")
+    p.add_argument("--keep", action="store_true",
+                   help="keep the current boss count")
+    p.add_argument("--count", type=int, default=None,
+                   help="set the boss count to this value")
     p.set_defaults(func=cmd_boss)
+
+    p = sub.add_parser("total", help="set the lifetime total")
+    p.add_argument("value", type=int)
+    p.set_defaults(func=cmd_total)
 
     p = sub.add_parser("history", help="list bosses you have beaten")
     p.set_defaults(func=cmd_history)
