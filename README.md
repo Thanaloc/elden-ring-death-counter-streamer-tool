@@ -9,9 +9,12 @@ game process.
 
 ## Install
 
-Download `elden-counter.exe` from [Releases](../../releases). It ships with
-Tesseract and language data for English, French, German, Spanish, Italian,
-Portuguese and Russian.
+Download `elden-counter-windows.zip` from [Releases](../../releases), unzip
+it anywhere, and run `elden-counter.exe` from inside the folder. Keep the
+folder together: the exe needs the files next to it.
+
+It ships with Tesseract and English. Other languages are downloaded on first
+setup, which takes a second and about a megabyte.
 
 With Python 3.10+: `pip install elden-death-counter`, plus the Tesseract
 engine ([Windows installer](https://github.com/UB-Mannheim/tesseract/wiki),
@@ -51,6 +54,7 @@ elden-counter run              detection and overlay
 elden-counter run --manual     hotkeys only
 elden-counter diagnose         watch what it reads, live
 elden-counter languages        list available languages
+elden-counter languages --add fra   download a language
 elden-counter boss "Radagon"   change the boss shown
 elden-counter total 1481       set the lifetime total
 elden-counter history          past bosses and their cost
@@ -87,15 +91,29 @@ on screen, so nothing drifts silently.
 Note what was on screen and raise `--similarity`. Measured worst false
 positive was 0.40, so there is room above the 0.60 default.
 
+**Windows Defender flagged the download.**
+False positive. The build is unsigned, and an unsigned executable nobody has
+downloaded before starts with no reputation at all, which is enough on its
+own. On VirusTotal, 2 engines out of 65 react, both with generic
+machine-learning labels rather than a named malware, while Kaspersky, ESET,
+BitDefender and Microsoft report nothing. You can check any release yourself
+by uploading it to [VirusTotal](https://www.virustotal.com).
+
+If you would rather not run an unsigned binary, `pip install
+elden-death-counter` gets you the same tool from source.
+
 **Which language code do I use?**
 The Tesseract three-letter code for your game's language: `eng`, `fra`,
 `deu`, `spa`, `ita`, `por`, `rus`, `jpn`. `elden-counter languages` lists
 what you have.
 
 **My language is missing.**
-Download the matching `.traineddata` from
+Setup downloads it for you. To do it ahead of time:
+`elden-counter languages --add fra`. Files land in the folder printed by
+`elden-counter languages` and persist between runs. Offline? Grab the
+`.traineddata` from
 [tessdata_fast](https://github.com/tesseract-ocr/tessdata_fast) and drop it
-in the folder printed by `elden-counter languages`. It persists between runs.
+in there by hand.
 
 **Tesseract errors about an illegal byte sequence.**
 It cannot open paths with accented characters, which happens when your

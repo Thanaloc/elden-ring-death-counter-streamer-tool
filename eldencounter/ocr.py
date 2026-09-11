@@ -179,6 +179,53 @@ def tessdata_dir() -> Path | None:
     return None
 
 
+TESSDATA_URL = ("https://github.com/tesseract-ocr/tessdata_fast/raw/main/"
+                "{lang}.traineddata")
+MIN_TRAINEDDATA_BYTES = 100_000
+
+
+def download_language(lang: str, folder: Path | None = None) -> Path:
+    """Fetch a language file into the persistent folder.
+
+    Only English ships with the executable. Carrying every language would
+    add over a hundred megabytes that a given user never opens, and a
+    bloated self-extracting binary is exactly what antivirus heuristics
+    dislike.
+    """
+    import urllib.request
+
+    folder = folder or user_tessdata()
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / f"{lang}.traineddata"
+
+    url = TESSDATA_URL.format(lang=lang)
+    temporary = target.with_suffix(".part")
+    try:
+        with urllib.request.urlopen(url, timeout=60) as response:
+            temporary.write_bytes(response.read())
+    except Exception as exc:
+        temporary.unlink(missing_ok=True)
+        raise OcrUnavailable(
+            f"Could not download {lang}.traineddata.\n"
+            f"  {url}\n"
+            f"  ({exc})\n\n"
+            "Download it by hand and drop it in:\n"
+            f"  {folder}"
+        ) from exc
+
+    size = temporary.stat().st_size
+    if size < MIN_TRAINEDDATA_BYTES:
+        temporary.unlink(missing_ok=True)
+        raise OcrUnavailable(
+            f"{lang}.traineddata came back as {size} bytes, which is not a "
+            "language file. The code may be wrong: check the list at "
+            "https://github.com/tesseract-ocr/tessdata_fast"
+        )
+
+    temporary.replace(target)
+    return target
+
+
 def missing_language_help(lang: str) -> str:
     """Explain how to add a missing language, with the exact path."""
     folder = tessdata_dir()

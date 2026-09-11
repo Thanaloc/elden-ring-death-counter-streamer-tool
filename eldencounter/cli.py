@@ -13,7 +13,7 @@ from . import __version__
 from .capture import crop_band, grab, imwrite_png, wait_for_death
 from .counter import DEFAULT_STATE_PATH, DeathLog
 from .ocr import (Detection, DetectorConfig, OcrUnavailable, TextDetector,
-                  available_languages, locate_text,
+                  available_languages, download_language, locate_text,
                   missing_language_help, read_text_verbose,
                   require_tesseract, tessdata_dir)
 from .server import serve
@@ -41,11 +41,14 @@ def cmd_setup(args) -> int:
 
     langs = available_languages()
     if langs and args.lang not in langs:
-        print(f"Language '{args.lang}' is not installed.")
-        print(f"Available: {', '.join(langs)}\n")
-        print(missing_language_help(args.lang))
-        print(f"\nOr rerun with an available language: --lang {langs[0]}")
-        return 1
+        print(f"Language '{args.lang}' is not installed. Downloading it...")
+        try:
+            path = download_language(args.lang)
+        except OcrUnavailable as exc:
+            print(f"\n{exc}")
+            print(f"\nOr rerun with an available language: --lang {langs[0]}")
+            return 1
+        print(f"  saved to {path} ({path.stat().st_size // 1024} KB)\n")
 
     with mss.mss() as sct:
         for i, m in enumerate(sct.monitors[1:], start=1):
@@ -269,11 +272,18 @@ def cmd_languages(args) -> int:
               "be able to read it.")
     print(f"Available languages: {', '.join(langs) or 'none'}")
 
-    utiles = [l for l in langs if l != "osd"]
-    if len(utiles) < 2:
-        print("\nEnglish only. To add a language:")
-        print(missing_language_help("fra"))
-        return 1
+    if args.add:
+        try:
+            path = download_language(args.add)
+        except OcrUnavailable as exc:
+            print(f"\n{exc}")
+            return 1
+        print(f"\n{args.add} added: {path} "
+              f"({path.stat().st_size // 1024} KB)")
+        return 0
+
+    print("\nMissing one? Setup downloads it automatically, or run:")
+    print("  elden-counter languages --add fra")
     return 0
 
 
@@ -361,6 +371,8 @@ def main(argv=None) -> int:
     p.set_defaults(func=cmd_diagnose)
 
     p = sub.add_parser("languages", help="list the languages available")
+    p.add_argument("--add", metavar="CODE", default=None,
+                   help="download a language, e.g. --add fra")
     p.set_defaults(func=cmd_languages)
 
     p = sub.add_parser("boss", help="change the boss on screen")

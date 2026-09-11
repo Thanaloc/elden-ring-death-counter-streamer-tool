@@ -5,10 +5,10 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write   # needed to create the Release and attach the exe
+  contents: write   # needed to create the Release and attach the build
 
 jobs:
-  windows-exe:
+  windows-build:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,7 +19,7 @@ jobs:
 
       - run: pip install . pyinstaller
 
-      - name: Prepare Tesseract and its languages
+      - name: Prepare Tesseract
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -32,51 +32,43 @@ jobs:
             throw "Tesseract not found in $src after install"
           }
 
+          # English only. Every other language is fetched on first setup:
+          # shipping them all added over 100 MB that a given user never opens,
+          # and made the build look like a dropper to antivirus heuristics.
           New-Item -ItemType Directory -Force -Path "tesseract\tessdata" | Out-Null
           Copy-Item "$src\tesseract.exe" "tesseract\"
           Copy-Item "$src\*.dll" "tesseract\"
-          Copy-Item "$src\tessdata\*.traineddata" "tesseract\tessdata\"
+          Copy-Item "$src\tessdata\eng.traineddata" "tesseract\tessdata\"
+          Copy-Item "$src\tessdata\osd.traineddata" "tesseract\tessdata\"
 
-          # Chocolatey ships English only. Without these files the tool is
-          # useless to anyone not playing in English, so a failure here must
-          # break the build rather than slip through.
-          foreach ($lang in @("fra", "deu", "spa", "ita", "por", "rus")) {
-            $out = "tesseract\tessdata\$lang.traineddata"
-            $url = "https://github.com/tesseract-ocr/tessdata_fast/raw/main/$lang.traineddata"
-            Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing
-            $size = (Get-Item $out).Length
-            if ($size -lt 100000) {
-              throw "$lang.traineddata is $size bytes: bad download"
-            }
-            Write-Host "$lang : $size bytes"
-          }
-
-          Write-Host "`nContents of tesseract\tessdata:"
-          Get-ChildItem "tesseract\tessdata" | ForEach-Object {
-            Write-Host ("  {0}  {1} bytes" -f $_.Name, $_.Length)
-          }
-
-      - name: Build the executable
+      - name: Build
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          pyinstaller --onefile --name elden-counter `
+          # --onedir rather than --onefile: a self-extracting binary behaves
+          # like a dropper and gets flagged. A plain folder does not.
+          pyinstaller --onedir --name elden-counter `
             --add-data "eldencounter/overlay;eldencounter/overlay" `
             --add-data "tesseract;tesseract" `
             --collect-submodules keyboard `
             --collect-all cv2 `
             entrypoint.py
 
-      - name: Verify the executable
+      - name: Verify
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          .\dist\elden-counter.exe --version
-          # The bundle must carry the languages: better to find out here
-          # than at the user's machine.
-          .\dist\elden-counter.exe languages
+          .\dist\elden-counter\elden-counter.exe --version
+          .\dist\elden-counter\elden-counter.exe languages
+          $mb = [math]::Round((Get-ChildItem dist\elden-counter -Recurse |
+            Measure-Object Length -Sum).Sum / 1MB, 1)
+          Write-Host "build size: $mb MB"
+
+      - name: Package
+        shell: pwsh
+        run: Compress-Archive -Path dist\elden-counter\* -DestinationPath elden-counter-windows.zip
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: dist/elden-counter.exe
+          files: elden-counter-windows.zip
           generate_release_notes: true
