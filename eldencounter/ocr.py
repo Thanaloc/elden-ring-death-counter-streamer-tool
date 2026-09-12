@@ -304,24 +304,48 @@ def normalise(text: str) -> str:
     return "".join(c for c in text if c.isalpha() and ord(c) < 128)
 
 
-def variants(crop: np.ndarray) -> list:
-    """Three preparations of the image, all tried.
+def _upscale(image: np.ndarray) -> np.ndarray:
+    return cv2.resize(image, None, fx=UPSCALE, fy=UPSCALE,
+                      interpolation=cv2.INTER_CUBIC)
 
-    None is enough alone: the text is sometimes lighter than its background,
-    sometimes darker, and its contrast varies enormously between areas of the
-    game. This combination read 8 captures out of 12, where the best single
-    preparation read 7.
-    """
+
+def _inverted(crop):
     stretched = cv2.normalize(crop, None, 0, 255, cv2.NORM_MINMAX)
-    big = cv2.resize(stretched, None, fx=UPSCALE, fy=UPSCALE,
-                     interpolation=cv2.INTER_CUBIC)
+    return 255 - _upscale(stretched)
 
+
+def _local_contrast(crop):
     local = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8)).apply(crop)
-    local = cv2.resize(local, None, fx=UPSCALE, fy=UPSCALE,
-                       interpolation=cv2.INTER_CUBIC)
+    return _upscale(local)
 
-    _, binary = cv2.threshold(big, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    return [255 - big, local, binary]
+
+def _otsu(crop):
+    stretched = cv2.normalize(crop, None, 0, 255, cv2.NORM_MINMAX)
+    _, binary = cv2.threshold(_upscale(stretched), 0, 255,
+                              cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    return binary
+
+
+def _adaptive(crop):
+    stretched = cv2.normalize(crop, None, 0, 255, cv2.NORM_MINMAX)
+    return cv2.adaptiveThreshold(_upscale(stretched), 255,
+                                 cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                 cv2.THRESH_BINARY, 31, 5)
+
+
+def _adaptive_inverted(crop):
+    return 255 - _adaptive(crop)
+
+
+# No single preparation is enough: the text is sometimes lighter than its
+# background, sometimes darker, and its contrast varies enormously between
+# areas of the game. Together these read 8 captures out of 12, where the best
+# single one read 7.
+PREPARATIONS = (_inverted, _local_contrast, _otsu, _adaptive, _adaptive_inverted)
+
+
+def variants(crop: np.ndarray) -> list:
+    return [prepare(crop) for prepare in PREPARATIONS]
 
 
 def read_text_verbose(crop: np.ndarray, lang: str):
@@ -439,20 +463,41 @@ class TextDetector:
         self._armed = True
         self._streak = 0
         self._last_fire = 0.0
+        self._next_preparation = 0
         self.last_score = 0.0
         self.last_text = ""
 
-    def score(self, band: np.ndarray) -> float:
-        """Similarity between what is read in the zone and the reference."""
+    def _similarity(self, text: str) -> float:
+        return difflib.SequenceMatcher(None, self.detection.reference, text).ratio()
+
+    def score(self, band: np.ndarray, rotate: bool = False) -> float:
+        """Similarity between what is read in the zone and the reference.
+
+        With rotate, only one preparation is tried, a different one on each
+        call. Running all five costs about 850 ms, too slow to keep up; one
+        costs 170 ms, and over the several seconds a death screen stays up
+        every preparation gets several attempts anyway.
+        """
         x0, y0, x1, y1 = self.detection.zone
         crop = band[y0:y1, x0:x1]
         if crop.size == 0:
             return 0.0
 
+        if rotate:
+            index = self._next_preparation % len(PREPARATIONS)
+            self._next_preparation += 1
+            images = [PREPARATIONS[index](crop)]
+        else:
+            images = variants(crop)
+
+        config = f"{TESSERACT_CONFIG} -l {self.detection.lang}"
         best, best_text = 0.0, ""
-        for text in read_text(crop, self.detection.lang):
-            ratio = difflib.SequenceMatcher(
-                None, self.detection.reference, text).ratio()
+        for image in images:
+            try:
+                text = normalise(pytesseract.image_to_string(image, config=config))
+            except Exception:
+                continue
+            ratio = self._similarity(text)
             if ratio > best:
                 best, best_text = ratio, text
 
@@ -461,7 +506,7 @@ class TextDetector:
 
     def update(self, band: np.ndarray, now: float) -> bool:
         """Call regularly. Returns True once per death."""
-        hit = self.score(band) >= self.cfg.similarity
+        hit = self.score(band, rotate=True) >= self.cfg.similarity
 
         if hit:
             self._streak += 1

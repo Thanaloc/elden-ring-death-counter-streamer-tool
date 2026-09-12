@@ -1,77 +1,53 @@
-name: Release
+name: Build
 
-# Tags only, and never automatically: cut a tag once a build has been tried.
-# Tags ending in -rc are published as pre-releases.
+# Every push builds and keeps the result as an artifact, without publishing
+# anything. Releases are cut from tags only, so the download page never shows
+# a version you have not tried yourself.
 on:
   push:
-    tags: ["v*"]
-
-permissions:
-  contents: write   # needed to create the Release and attach the build
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
 
 jobs:
   windows-build:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - run: pip install . pyinstaller
-
       - name: Prepare Tesseract
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $ProgressPreference = "SilentlyContinue"
-
           choco install tesseract --no-progress -y
-
           $src = "C:\Program Files\Tesseract-OCR"
-          if (-not (Test-Path "$src\tesseract.exe")) {
-            throw "Tesseract not found in $src after install"
-          }
-
-          # English only. Every other language is fetched on first setup:
-          # shipping them all added over 100 MB that a given user never opens,
-          # and made the build look like a dropper to antivirus heuristics.
+          if (-not (Test-Path "$src\tesseract.exe")) { throw "Tesseract not found" }
           New-Item -ItemType Directory -Force -Path "tesseract\tessdata" | Out-Null
           Copy-Item "$src\tesseract.exe" "tesseract\"
           Copy-Item "$src\*.dll" "tesseract\"
           Copy-Item "$src\tessdata\eng.traineddata" "tesseract\tessdata\"
           Copy-Item "$src\tessdata\osd.traineddata" "tesseract\tessdata\"
-
       - name: Build
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          # --onedir rather than --onefile: a self-extracting binary behaves
-          # like a dropper and gets flagged. A plain folder does not.
           pyinstaller --onedir --name elden-counter `
             --add-data "eldencounter/overlay;eldencounter/overlay" `
             --add-data "tesseract;tesseract" `
             --collect-submodules keyboard `
             --collect-all cv2 `
             entrypoint.py
-
       - name: Verify
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           .\dist\elden-counter\elden-counter.exe --version
           .\dist\elden-counter\elden-counter.exe languages
-          $mb = [math]::Round((Get-ChildItem dist\elden-counter -Recurse |
-            Measure-Object Length -Sum).Sum / 1MB, 1)
-          Write-Host "build size: $mb MB"
-
-      - name: Package
-        shell: pwsh
-        run: Compress-Archive -Path dist\elden-counter\* -DestinationPath elden-counter-windows.zip
-
-      - uses: softprops/action-gh-release@v2
+      - uses: actions/upload-artifact@v4
         with:
-          files: elden-counter-windows.zip
-          generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-rc') }}
+          name: elden-counter-windows
+          path: dist/elden-counter/
+          retention-days: 14

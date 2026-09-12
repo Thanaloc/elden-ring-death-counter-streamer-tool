@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from collections import deque
 
 import cv2
 import mss
@@ -23,9 +24,13 @@ DETECTION_PATH = DEFAULT_STATE_PATH.parent / "detection.json"
 PREVIEW_PATH = DEFAULT_STATE_PATH.parent / "apercu-setup.png"
 SAMPLES_DIR = DEFAULT_STATE_PATH.parent / "echantillons"
 
-# A read takes about 350 ms. No point going faster: the death screen stays
-# up for several seconds.
-CHECKS_PER_SECOND = 2
+# One rotating preparation costs about 160 ms.
+CHECKS_PER_SECOND = 4
+
+# Seconds of screen kept in memory, so that pressing F9 can save what the
+# detector was looking at when it missed a death.
+MISS_WINDOW_SECONDS = 12
+MISSES_DIR = DEFAULT_STATE_PATH.parent / "misses"
 
 
 # ---------------------------------------------------------------- setup
@@ -151,7 +156,17 @@ def cmd_run(args) -> int:
     print("Add it in OBS as a browser source, 600x300, transparent "
           "background.\n")
 
-    _bind_hotkeys(log)
+    recent = deque(maxlen=MISS_WINDOW_SECONDS * CHECKS_PER_SECOND)
+
+    def manual_add():
+        log.adjust(+1)
+        if detector is None or not args.record_misses:
+            return
+        folder = _save_miss(list(recent), detector)
+        if folder is not None:
+            print(f"Missed death saved to {folder}")
+
+    _bind_hotkeys(log, manual_add)
 
     snap = log.snapshot()
     print(f"Boss: {snap['boss_name'] or 'none'} - {snap['boss_count']} deaths "
@@ -170,7 +185,12 @@ def cmd_run(args) -> int:
                 monitor = sct.monitors[args.monitor]
                 while True:
                     started = time.time()
-                    if detector.update(crop_band(grab(sct, monitor)), started):
+                    band = crop_band(grab(sct, monitor))
+                    counted = detector.update(band, started)
+                    if args.record_misses:
+                        recent.append((started, band, detector.last_score,
+                                       detector.last_text))
+                    if counted:
                         s = log.record_death()
                         print(f"Death counted - {s['boss_count']} on this boss, "
                               f"{s['total']} overall")
@@ -185,12 +205,47 @@ def cmd_run(args) -> int:
     return 0
 
 
-def _bind_hotkeys(log: DeathLog) -> None:
+def _save_miss(frames, detector) -> Path | None:
+    """Write out the seconds leading up to a manual correction.
+
+    Pressing F9 means a death just went uncounted, so the tool knows exactly
+    when it was wrong. These frames are the only way to find out why, and
+    they are worth far more than any guess about what went wrong.
+    """
+    if not frames:
+        return None
+
+    folder = MISSES_DIR / time.strftime("%Y%m%d-%H%M%S")
+    folder.mkdir(parents=True, exist_ok=True)
+
+    lines = []
+    for index, (moment, band, score, text) in enumerate(frames, start=1):
+        name = f"{index:02d}.png"
+        imwrite_png(folder / name, band)
+        lines.append(f"{name}  score={score:.2f}  read={text!r}")
+
+    zone = detector.detection.zone if detector else None
+    header = [
+        f"reference: {detector.detection.reference if detector else '-'}",
+        f"zone: {zone}",
+        f"threshold: {detector.cfg.similarity if detector else '-'}",
+        "",
+    ]
+    (folder / "readings.txt").write_text("\n".join(header + lines),
+                                         encoding="utf-8")
+    return folder
+
+
+def _bind_hotkeys(log: DeathLog, on_manual_add=None) -> None:
     try:
         import keyboard
     except ImportError:
         print("The 'keyboard' module is missing: hotkeys disabled.")
         return
+
+    if on_manual_add is None:
+        def on_manual_add():
+            log.adjust(+1)
 
     def beaten():
         s = log.snapshot()
@@ -198,7 +253,7 @@ def _bind_hotkeys(log: DeathLog) -> None:
         print(f"Boss beaten in {s['boss_count']} deaths. Counter reset.")
 
     try:
-        keyboard.add_hotkey("f9", lambda: log.adjust(+1))
+        keyboard.add_hotkey("f9", lambda: on_manual_add())
         keyboard.add_hotkey("f10", lambda: log.adjust(-1))
         keyboard.add_hotkey("f11", lambda: log.reset_boss())
         keyboard.add_hotkey("f12", beaten)
@@ -362,7 +417,10 @@ def main(argv=None) -> int:
     p.add_argument("--manual", action="store_true",
                    help="count only on hotkeys")
     p.add_argument("--debug", action="store_true")
-    p.set_defaults(func=cmd_run)
+    p.add_argument("--no-record-misses", dest="record_misses",
+                   action="store_false",
+                   help="do not save frames when you correct with F9")
+    p.set_defaults(func=cmd_run, record_misses=True)
 
     p = sub.add_parser("diagnose", parents=[screen],
                        help="watch what the detector reads")

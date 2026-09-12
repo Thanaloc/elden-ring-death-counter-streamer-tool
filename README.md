@@ -83,9 +83,15 @@ text is not being read at all, usually because the box is wrong or the
 language is not the game's.
 
 **A death was missed.**
-Expected occasionally. Reading fails on very bright scenes or busy
-backgrounds where the text washes out. Press F9 to correct it. The number is
-on screen, so nothing drifts silently.
+Press F9 to correct it. The number is on screen, so nothing drifts silently.
+
+F9 also saves what the detector was looking at over the previous twelve
+seconds, into a `misses` folder next to your settings, along with every
+reading and score. Those frames are the only way to work out why a death did
+not register. Turn it off with `--no-record-misses`.
+
+Reading fails on very bright scenes or busy backgrounds where the text
+washes out.
 
 **Something that is not a death got counted.**
 Note what was on screen and raise `--similarity`. Measured worst false
